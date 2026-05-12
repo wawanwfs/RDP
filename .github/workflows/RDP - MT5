@@ -1,0 +1,191 @@
+name: RDP - MetaTrader 5
+
+on:
+  workflow_dispatch:
+
+jobs:
+  secure-rdp:
+    runs-on: windows-latest
+    timeout-minutes: 9000
+
+    steps:
+      - name: Optimize Windows Performance for MT5
+        run: |
+          # ── Visual & Animation Tweaks ──────────────────────────────────────
+          $regPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects"
+          Set-ItemProperty -Path $regPath -Name "VisualFXSetting" -Value 2 -Force -ErrorAction SilentlyContinue
+
+          $perf = "HKCU:\Control Panel\Desktop"
+          Set-ItemProperty -Path $perf -Name "UserPreferencesMask" -Value ([byte[]](0x90,0x12,0x03,0x80,0x10,0x00,0x00,0x00)) -Force -ErrorAction SilentlyContinue
+          Set-ItemProperty -Path $perf -Name "MenuShowDelay"       -Value "0"  -Force
+          Set-ItemProperty -Path $perf -Name "DragFullWindows"     -Value "0"  -Force
+
+          # ── Power Plan: High Performance ───────────────────────────────────
+          powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c
+
+          # ── Disable Useless Services ───────────────────────────────────────
+          $services = @(
+            "SysMain",           # Superfetch
+            "WSearch",           # Windows Search
+            "wuauserv",          # Windows Update
+            "DiagTrack",         # Telemetry
+            "dmwappushservice",  # WAP Push
+            "MapsBroker",
+            "XblGameSave",
+            "XboxNetApiSvc",
+            "RetailDemo",
+            "TabletInputService"
+          )
+          foreach ($svc in $services) {
+            Stop-Service  -Name $svc -Force        -ErrorAction SilentlyContinue
+            Set-Service   -Name $svc -StartupType Disabled -ErrorAction SilentlyContinue
+          }
+
+          # ── Disable Windows Defender Real-Time (speeds up MT5 disk I/O) ───
+          Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue
+          Add-MpPreference -ExclusionPath "C:\MT5"          -ErrorAction SilentlyContinue
+
+          # ── Prioritize Background Apps (important for MT5) ─────────────────
+          Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\PriorityControl" `
+                           -Name "Win32PrioritySeparation" -Value 0x26 -Force
+
+          # ── Network Tweaks ─────────────────────────────────────────────────
+          netsh int tcp set global autotuninglevel=normal
+          netsh int tcp set global chimney=disabled
+          netsh int tcp set global dca=enabled
+          netsh int tcp set global netdma=enabled
+          netsh int tcp set supplemental internet congestionprovider=ctcp
+
+          Write-Host "✅ Windows optimized for MetaTrader 5"
+
+      - name: Configure RDP
+        run: |
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
+                           -Name "fDenyTSConnections" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+                           -Name "UserAuthentication" -Value 0 -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+                           -Name "SecurityLayer" -Value 0 -Force
+
+          # Increase color depth & disable bitmap caching limit for smoother RDP
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+                           -Name "ColorDepth" -Value 4 -Force   # 32-bit
+
+          netsh advfirewall firewall delete rule name="RDP-Tailscale" 2>$null
+          netsh advfirewall firewall add rule name="RDP-Tailscale" `
+            dir=in action=allow protocol=TCP localport=3389
+
+          Restart-Service -Name TermService -Force
+          Write-Host "✅ RDP configured"
+
+      - name: Create RDP User
+        run: |
+          # Generate password yang pasti lolos policy Windows
+          $upper   = [char[]](65..90)   | Get-Random -Count 4
+          $lower   = [char[]](97..122)  | Get-Random -Count 4
+          $number  = [char[]](48..57)   | Get-Random -Count 4
+          $special = [char[]]@(33,64,35,36,42,43,45,61) | Get-Random -Count 4
+          # Minimal 16 karakter, shuffle semua
+          $password = -join ($upper + $lower + $number + $special | Sort-Object { Get-Random })
+
+          $securePass = ConvertTo-SecureString $password -AsPlainText -Force
+
+          # Hapus user lama kalau ada (re-run aman)
+          if (Get-LocalUser -Name "RDP" -ErrorAction SilentlyContinue) {
+            Remove-LocalUser -Name "RDP"
+          }
+
+          New-LocalUser -Name "RDP" `
+                        -Password $securePass `
+                        -AccountNeverExpires `
+                        -PasswordNeverExpires `
+                        -UserMayNotChangePassword
+
+          Add-LocalGroupMember -Group "Administrators"       -Member "RDP"
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDP"
+
+          "RDP_PASSWORD=$password" | Out-File -Append -FilePath $env:GITHUB_ENV -Encoding utf8
+          Write-Host "✅ User RDP created | Password: $password"
+
+      - name: Install MetaTrader 5
+        run: |
+          $mt5Url  = "https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe"
+          $mt5Path = "$env:TEMP\mt5setup.exe"
+
+          Write-Host "⬇️  Downloading MetaTrader 5..."
+          Invoke-WebRequest -Uri $mt5Url -OutFile $mt5Path -UseBasicParsing
+
+          Write-Host "📦 Installing MetaTrader 5 silently..."
+          Start-Process -FilePath $mt5Path `
+                        -ArgumentList "/auto", "/portable", "/installdir:C:\MT5" `
+                        -Wait -NoNewWindow
+
+          Remove-Item $mt5Path -Force -ErrorAction SilentlyContinue
+
+          # Add MT5 to PATH so it's easy to launch
+          [Environment]::SetEnvironmentVariable(
+            "PATH",
+            "$env:PATH;C:\MT5",
+            [EnvironmentVariableTarget]::Machine
+          )
+
+          Write-Host "✅ MetaTrader 5 installed at C:\MT5"
+
+      - name: Install Tailscale
+        run: |
+          $tsUrl  = "https://pkgs.tailscale.com/stable/tailscale-setup-1.82.0-amd64.msi"
+          $tsPath = "$env:TEMP\tailscale.msi"
+
+          Invoke-WebRequest -Uri $tsUrl -OutFile $tsPath -UseBasicParsing
+          Start-Process msiexec.exe -ArgumentList "/i","`"$tsPath`"","/quiet","/norestart" -Wait
+          Remove-Item $tsPath -Force
+
+          Write-Host "✅ Tailscale installed"
+
+      - name: Connect Tailscale
+        run: |
+          & "$env:ProgramFiles\Tailscale\tailscale.exe" up `
+              --authkey=${{ secrets.TAILSCALE_AUTH_KEY }} `
+              --hostname=mt5-runner-$env:GITHUB_RUN_ID
+
+          $tsIP   = $null
+          $retry  = 0
+          while (-not $tsIP -and $retry -lt 15) {
+            Start-Sleep -Seconds 4
+            $tsIP = & "$env:ProgramFiles\Tailscale\tailscale.exe" ip -4 2>$null
+            $retry++
+          }
+
+          if (-not $tsIP) { Write-Error "❌ Tailscale IP not assigned"; exit 1 }
+
+          "TAILSCALE_IP=$tsIP" | Out-File -Append -FilePath $env:GITHUB_ENV -Encoding utf8
+          Write-Host "✅ Tailscale IP: $tsIP"
+
+      - name: Verify RDP Port
+        run: |
+          $result = Test-NetConnection -ComputerName $env:TAILSCALE_IP -Port 3389
+          if (-not $result.TcpTestSucceeded) {
+            Write-Error "❌ RDP port 3389 unreachable"; exit 1
+          }
+          Write-Host "✅ RDP port verified"
+
+      - name: Show Access Info & Keep Alive
+        run: |
+          Write-Host ""
+          Write-Host "╔══════════════════════════════════════╗"
+          Write-Host "║        RDP + MetaTrader 5 Ready      ║"
+          Write-Host "╠══════════════════════════════════════╣"
+          Write-Host "║  Host     : $env:TAILSCALE_IP"
+          Write-Host "║  Username : RDP"
+          Write-Host "║  Password : $env:RDP_PASSWORD"
+          Write-Host "║  MT5 Path : C:\MT5\terminal64.exe"
+          Write-Host "╚══════════════════════════════════════╝"
+          Write-Host ""
+
+          # Keep runner alive
+          $i = 0
+          while ($true) {
+            $i++
+            Write-Host "[$(Get-Date -Format 'HH:mm:ss')] ✅ Session active — tick #$i"
+            Start-Sleep -Seconds 300
+          }
