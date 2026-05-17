@@ -6,12 +6,20 @@ on:
       windows_version:
         description: 'Pilih Versi Windows (OS)'
         required: true
-        default: 'windows-2022'
+        default: 'windows-2025'
         type: choice
         options:
+          # Recommended stable Windows x64 runners
           - 'windows-latest'
+          - 'windows-2025'
           - 'windows-2022'
-          - 'windows-2019'
+
+          # Windows ARM64 runner
+          - 'windows-11-arm'
+
+          # Public repository only / Visual Studio 2026 image
+          # Jika repo private gagal, gunakan windows-2025 atau windows-2022
+          - 'windows-2025-vs2026'
 
       duration_hours:
         description: 'Durasi RDP Aktif (Jam)'
@@ -171,17 +179,48 @@ jobs:
       - name: 🐾 Install Tailscale
         shell: pwsh
         run: |
-          Write-Host "Downloading Tailscale MSI..."
+          Write-Host "Detecting Windows runner architecture..."
 
-          # Stable explicit Tailscale version.
-          # Jika suatu saat error, buka https://pkgs.tailscale.com/stable/ lalu ganti versinya.
-          $tsUrl  = "https://pkgs.tailscale.com/stable/tailscale-setup-1.98.2-amd64.msi"
+          $tailscaleVersion = "1.98.2"
+          $runnerArch = $env:RUNNER_ARCH
+
+          if ([string]::IsNullOrWhiteSpace($runnerArch)) {
+            $runnerArch = $env:PROCESSOR_ARCHITECTURE
+          }
+
+          Write-Host "Runner architecture: $runnerArch"
+
+          switch -Regex ($runnerArch) {
+            "ARM64" {
+              $tsArch = "arm64"
+            }
+            "X64|AMD64" {
+              $tsArch = "amd64"
+            }
+            "X86" {
+              $tsArch = "x86"
+            }
+            default {
+              Write-Error "Unsupported architecture: $runnerArch"
+              exit 1
+            }
+          }
+
+          $tsUrl  = "https://pkgs.tailscale.com/stable/tailscale-setup-$tailscaleVersion-$tsArch.msi"
           $tsPath = "$env:TEMP\tailscale.msi"
+
+          Write-Host "Downloading Tailscale:"
+          Write-Host $tsUrl
 
           Invoke-WebRequest `
             -Uri $tsUrl `
             -OutFile $tsPath `
             -UseBasicParsing
+
+          if (-not (Test-Path $tsPath)) {
+            Write-Error "Tailscale installer download failed"
+            exit 1
+          }
 
           Write-Host "Installing Tailscale silently..."
 
@@ -198,8 +237,8 @@ jobs:
             exit 1
           }
 
-          Write-Host "✅ Tailscale installed"
-
+          Write-Host "✅ Tailscale installed successfully"
+          
       - name: 🌐 Connect Tailscale
         shell: pwsh
         run: |
