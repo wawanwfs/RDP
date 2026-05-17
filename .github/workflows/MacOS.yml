@@ -1,4 +1,4 @@
-name: "🖥️ macOS Remote noVNC"
+name: "🖥️ macOS Remote noVNC via Tailscale"
 
 on:
   workflow_dispatch:
@@ -17,10 +17,19 @@ on:
         required: true
         default: "330"
         type: string
+      tailscale_tags:
+        description: "Tailscale tags for OAuth/OIDC login, comma-separated (example: tag:ci)"
+        required: false
+        default: "tag:ci"
+        type: string
 
 concurrency:
   group: macos-novnc-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: read
+  id-token: write
 
 jobs:
   macos-novnc:
@@ -36,6 +45,10 @@ jobs:
       WEBSOCKIFY_LOG: /tmp/websockify.log
       TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
       TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
+      TAILSCALE_OAUTH_CLIENT_ID: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+      TAILSCALE_OAUTH_SECRET: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
+      TAILSCALE_AUDIENCE: ${{ secrets.TAILSCALE_AUDIENCE }}
+      TAILSCALE_TAGS: ${{ inputs.tailscale_tags }}
 
     steps:
       - name: "✅ Validate input and Tailscale secret"
@@ -43,10 +56,16 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          if [[ -z "${{ secrets.TAILSCALE_AUTHKEY }}" && -z "${{ secrets.TAILSCALE_AUTH_KEY }}" ]]; then
-            echo "❌ Missing secret. Add Repository Secret: TAILSCALE_AUTHKEY"
-            echo "   Alternative legacy name still accepted: TAILSCALE_AUTH_KEY"
+          if [[ -z "$TAILSCALE_AUTHKEY" && -z "$TAILSCALE_AUTH_KEY" && -z "$TAILSCALE_OAUTH_CLIENT_ID" && -z "$TAILSCALE_OAUTH_SECRET" && -z "$TAILSCALE_AUDIENCE" ]]; then
+            echo "❌ Missing Tailscale credential. Provide either:"
+            echo "   - TAILSCALE_AUTHKEY or legacy TAILSCALE_AUTH_KEY"
+            echo "   - TAILSCALE_OAUTH_CLIENT_ID + TAILSCALE_OAUTH_SECRET + tailscale_tags"
+            echo "   - TAILSCALE_OAUTH_CLIENT_ID + TAILSCALE_AUDIENCE + tailscale_tags"
             exit 1
+          fi
+
+          if [[ -n "$TAILSCALE_TAGS" ]]; then
+            echo "✅ Tailscale tags: $TAILSCALE_TAGS"
           fi
 
           KEEPALIVE_MINUTES="${{ inputs.keepalive_minutes }}"
@@ -69,7 +88,9 @@ jobs:
           # of the GitHub macOS runner instead of creating a new remoteadmin user.
           CONSOLE_USER="$(stat -f %Su /dev/console 2>/dev/null || true)"
           if [[ -z "$CONSOLE_USER" || "$CONSOLE_USER" == "root" || "$CONSOLE_USER" == "loginwindow" ]]; then
-            CONSOLE_USER="$(whoami)"
+            echo "❌ Could not resolve the active console user"
+            echo "   /dev/console returned: '${CONSOLE_USER:-<empty>}'"
+            exit 1
           fi
           GUI_UID="$(id -u "$CONSOLE_USER")"
 
@@ -232,7 +253,7 @@ jobs:
           warn() { printf '  ⚠️  %s\n' "$*"; }
 
           run_gui() {
-            sudo launchctl asuser "$GUI_UID" sudo -u "$REMOTE_USER" "$@" 2>/dev/null || "$@" 2>/dev/null || true
+            sudo launchctl asuser "$GUI_UID" sudo -u "$REMOTE_USER" "$@"
           }
 
           run_gui open -a Finder
@@ -450,6 +471,24 @@ jobs:
         uses: tailscale/github-action@v4
         with:
           authkey: ${{ secrets.TAILSCALE_AUTH_KEY }}
+          hostname: mac-runner-${{ github.run_id }}
+
+      - name: "🔗 Connect Tailscale using OAuth client"
+        if: ${{ env.TAILSCALE_AUTHKEY == '' && env.TAILSCALE_AUTH_KEY == '' && env.TAILSCALE_OAUTH_CLIENT_ID != '' && env.TAILSCALE_OAUTH_SECRET != '' }}
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
+          tags: ${{ inputs.tailscale_tags }}
+          hostname: mac-runner-${{ github.run_id }}
+
+      - name: "🔗 Connect Tailscale using workload identity"
+        if: ${{ env.TAILSCALE_AUTHKEY == '' && env.TAILSCALE_AUTH_KEY == '' && env.TAILSCALE_OAUTH_CLIENT_ID != '' && env.TAILSCALE_OAUTH_SECRET == '' && env.TAILSCALE_AUDIENCE != '' }}
+        uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
+          audience: ${{ secrets.TAILSCALE_AUDIENCE }}
+          tags: ${{ inputs.tailscale_tags }}
           hostname: mac-runner-${{ github.run_id }}
 
       - name: "📡 Resolve Tailscale IP"
