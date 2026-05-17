@@ -6,16 +6,17 @@ on:
       windows_version:
         description: 'Pilih Versi Windows (OS)'
         required: true
-        default: 'windows-latest'
+        default: 'windows-2022'
         type: choice
         options:
           - 'windows-latest'
           - 'windows-2022'
           - 'windows-2019'
+
       duration_hours:
         description: 'Durasi RDP Aktif (Jam)'
         required: true
-        default: '6'
+        default: '3'
         type: choice
         options:
           - '1'
@@ -28,157 +29,45 @@ jobs:
     runs-on: ${{ inputs.windows_version }}
     timeout-minutes: 360
 
+    env:
+      RDP_USER: RDP
+
     steps:
-      - name: 🚀 Windows Performance & Stability Tweaks
+      - name: ⚡ Windows Performance Optimization
         shell: pwsh
         run: |
-          Write-Host "Mengoptimalkan Windows untuk performa RDP maksimal..."
-          
-          # Aktifkan High Performance Power Plan & Matikan Hibernasi
+          Write-Host "==========================================="
+          Write-Host " Optimizing Windows for RDP Performance "
+          Write-Host "==========================================="
+
+          # Power Optimization
           powercfg -setactive SCHEME_MIN
-          powercfg -h off
-          
-          # Matikan service background yang membebani disk/CPU
-          Stop-Service -Name "SysMain" -Force -ErrorAction SilentlyContinue
-          Set-Service -Name "SysMain" -StartupType Disabled -ErrorAction SilentlyContinue
-          Stop-Service -Name "WSearch" -Force -ErrorAction SilentlyContinue
-          Set-Service -Name "WSearch" -StartupType Disabled -ErrorAction SilentlyContinue
-          
-          # Aktifkan Audio Service untuk pengalaman RDP penuh
-          Set-Service -Name "Audiosrv" -StartupType Automatic -ErrorAction SilentlyContinue
-          Start-Service -Name "Audiosrv" -ErrorAction SilentlyContinue
-          
-          # Matikan animasi Windows (Adjust for Best Performance)
-          New-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" -Name "VisualFXSetting" -Value 2 -PropertyType DWORD -Force | Out-Null
-          
-          Write-Host "Tweak selesai diterapkan! ✅"
+          powercfg -hibernate off
 
-      - name: 🛠️ Configure Core RDP Settings
-        shell: pwsh
-        run: |
-          # Aktifkan RDP
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0 -Force
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "SecurityLayer" -Value 0 -Force
+          # Disable unnecessary services safely
+          $services = @(
+            'SysMain',
+            'WSearch'
+          )
 
-          # Hapus rule firewall lama jika ada dan buat rule untuk RDP
-          netsh advfirewall firewall delete rule name="RDP-Tailscale" | Out-Null
-          netsh advfirewall firewall add rule name="RDP-Tailscale" dir=in action=allow protocol=TCP localport=3389 | Out-Null
-
-          Restart-Service -Name TermService -Force
-          Write-Host "RDP Core Setup Selesai! ✅"
-
-      - name: 🔑 Create Secure RDP User
-        shell: pwsh
-        run: |
-          $charSet = @{
-              Upper   = [char[]](65..90)
-              Lower   = [char[]](97..122)
-              Number  = [char[]](48..57)
-              Special = [char[]]('!','@','#','$','%','^','&','*')
-          }
-          $rawPassword = @()
-          $rawPassword += $charSet.Upper | Get-Random -Count 4
-          $rawPassword += $charSet.Lower | Get-Random -Count 4
-          $rawPassword += $charSet.Number | Get-Random -Count 4
-          $rawPassword += $charSet.Special | Get-Random -Count 4
-          
-          $password = -join ($rawPassword | Sort-Object { Get-Random })
-          $securePass = ConvertTo-SecureString $password -AsPlainText -Force
-          
-          New-LocalUser -Name "RDP" -Password $securePass -AccountNeverExpires
-          Add-LocalGroupMember -Group "Administrators" -Member "RDP"
-          Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDP"
-          
-          # Simpan kredensial untuk ditampilkan di Dashboard
-          echo "RDP_PASS=$password" >> $env:GITHUB_ENV
-          
-          if (-not (Get-LocalUser -Name "RDP")) {
-              Write-Error "Gagal membuat user RDP!"
-              exit 1
+          foreach ($svc in $services) {
+            try {
+              Stop-Service -Name $svc -Force -ErrorAction SilentlyContinue
+              Set-Service -Name $svc -StartupType Disabled -ErrorAction SilentlyContinue
+              Write-Host "Disabled service: $svc"
+            }
+            catch {
+              Write-Host "Skipped service: $svc"
+            }
           }
 
-      - name: 🐾 Install & Connect Tailscale (Windows Native)
-        shell: pwsh
-        run: |
-          Write-Host "Mengunduh Tailscale MSI..."
-          $tsUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-latest.msi"
-          $installerPath = "$env:TEMP\tailscale.msi"
-          Invoke-WebRequest -Uri $tsUrl -OutFile $installerPath
-          
-          Write-Host "Menginstal Tailscale diam-diam (Silent Install)..."
-          Start-Process msiexec.exe -ArgumentList "/i", "`"$installerPath`"", "/quiet", "/norestart" -Wait
-          
-          Write-Host "Login ke jaringan Tailscale..."
-          $tsExe = "$env:ProgramFiles\Tailscale\tailscale.exe"
-          
-          # Menggunakan --unattended agar jalan di background sebagai service
-          & $tsExe up --authkey="${{ secrets.TAILSCALE_AUTH_KEY }}" --hostname="gh-win-runner-${{ github.run_id }}" --unattended --accept-routes
-          
-          # Tunggu sebentar sampai IP ter-assign
-          Start-Sleep -Seconds 10
-
-      - name: 🌐 Verify RDP & Export Credentials
-        shell: pwsh
-        run: |
-          # Ambil IP Tailscale
-          $tsExe = "$env:ProgramFiles\Tailscale\tailscale.exe"
-          $tsIP = (& $tsExe ip -4).Trim()
-          
-          if (-not $tsIP) {
-              Write-Error "Gagal mendapatkan IP dari Tailscale!"
-              exit 1
+          # Enable Audio Service
+          try {
+            Set-Service -Name 'Audiosrv' -StartupType Automatic
+            Start-Service -Name 'Audiosrv'
           }
-          
-          echo "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
-          
-          Write-Host "Menguji koneksi ke port 3389 di IP: $tsIP..."
-          $testResult = Test-NetConnection -ComputerName $tsIP -Port 3389 -WarningAction SilentlyContinue
-          
-          if (-not $testResult.TcpTestSucceeded) {
-              Write-Error "Gagal terhubung ke port RDP!"
-              exit 1
+          catch {
+            Write-Host "Audio service already active"
           }
-          Write-Host "Koneksi RDP Berhasil! ✅"
 
-      - name: 📊 Generate Action Dashboard Summary
-        shell: pwsh
-        run: |
-          $summary = @"
-          ## 🚀 Sesi RDP Windows Anda Siap!
-          
-          Runner siap digunakan dengan peningkatan performa. Gunakan detail berikut untuk *login* melalui Remote Desktop Connection (RDC).
-          
-          | Atribut | Keterangan |
-          |---------|------------|
-          | **🖥️ OS Version** | `${{ inputs.windows_version }}` |
-          | **🌐 IP Address** | `$env:TAILSCALE_IP` |
-          | **👤 Username** | `RDP` |
-          | **🔑 Password** | `$env:RDP_PASS` |
-          | **⏱️ Estimasi Waktu**| `${{ inputs.duration_hours }} Jam` |
-          
-          > ⚠️ **Catatan:** Jangan menutup halaman terminal (PowerShell) yang sedang berjalan di dalam RDP jika Anda ingin sesi ini tetap hidup.
-          "@
-          
-          # Tulis ke GitHub Step Summary agar mudah disalin
-          echo $summary >> $env:GITHUB_STEP_SUMMARY
-
-      - name: ⏳ Maintain Connection (Keep-Alive)
-        shell: pwsh
-        run: |
-          Write-Host "========================================="
-          Write-Host "         SESI RDP SEDANG AKTIF           "
-          Write-Host "========================================="
-          Write-Host "OS       : ${{ inputs.windows_version }}"
-          Write-Host "IP       : $env:TAILSCALE_IP"
-          Write-Host "Username : RDP"
-          Write-Host "Password : $env:RDP_PASS"
-          Write-Host "========================================="
-          
-          $hours = [int]"${{ inputs.duration_hours }}"
-          $seconds = $hours * 3600
-          
-          Write-Host "Sesi akan dipertahankan selama $hours jam ($seconds detik)."
-          Write-Host "Gunakan 'Cancel workflow' di GitHub Actions jika ingin mematikan manual."
-          
-          Start-Sleep -Seconds $seconds
+          Write-Host 'Session completed.'
