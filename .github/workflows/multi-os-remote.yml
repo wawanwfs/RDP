@@ -452,28 +452,46 @@ jobs:
           echo "========================================="
 
           NOVNC_DIR="$HOME/noVNC"
+          VENV_DIR="$HOME/novnc-venv"
 
-          rm -rf "$NOVNC_DIR"
+          echo "Cleaning old noVNC files..."
+          rm -rf "$NOVNC_DIR" "$VENV_DIR"
+
+          echo "Cloning noVNC..."
           git clone --depth=1 https://github.com/novnc/noVNC.git "$NOVNC_DIR"
 
-          python3 -m pip install --user --upgrade pip
-          python3 -m pip install --user websockify
+          echo "Creating Python virtual environment..."
+          python3 -m venv "$VENV_DIR"
 
-          export PATH="$HOME/Library/Python/3.*/bin:$PATH"
+          echo "Installing websockify inside virtual environment..."
+          "$VENV_DIR/bin/python" -m pip install --upgrade pip
+          "$VENV_DIR/bin/python" -m pip install websockify
 
-          nohup python3 -m websockify \
+          echo "Starting noVNC websockify proxy..."
+
+          # Prevent GitHub Actions from killing long-running background process
+          export RUNNER_TRACKING_ID=""
+
+          nohup "$VENV_DIR/bin/python" -m websockify \
             --web="$NOVNC_DIR" \
             0.0.0.0:6080 \
             localhost:5900 \
             >/tmp/novnc.log 2>&1 &
 
-          sleep 5
+          sleep 8
+
+          if ! lsof -iTCP:6080 -sTCP:LISTEN >/dev/null 2>&1; then
+            echo "❌ noVNC failed to start. Log:"
+            cat /tmp/novnc.log || true
+            exit 1
+          fi
 
           echo "ACCESS_PROTO=noVNC Browser" >> "$GITHUB_ENV"
           echo "ACCESS_PORT=6080" >> "$GITHUB_ENV"
 
           echo "✅ macOS noVNC setup completed"
           echo "VNC Password: $VNC_PASS"
+          echo "noVNC running on port 6080"
 
       # =========================================================
       # 🐾 TAILSCALE CONNECTION
