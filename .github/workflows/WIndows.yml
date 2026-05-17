@@ -16,7 +16,7 @@ on:
       duration_hours:
         description: 'Durasi RDP Aktif (Jam)'
         required: true
-        default: '3'
+        default: '6'
         type: choice
         options:
           - '1'
