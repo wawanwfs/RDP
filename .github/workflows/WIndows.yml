@@ -70,4 +70,196 @@ jobs:
             Write-Host "Audio service already active"
           }
 
+          # Improve UI responsiveness
+          New-ItemProperty `
+            -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects' `
+            -Name 'VisualFXSetting' `
+            -Value 2 `
+            -PropertyType DWORD `
+            -Force | Out-Null
+
+          Write-Host "Optimization completed successfully ✅"
+
+      - name: 🔐 Configure Secure RDP
+        shell: pwsh
+        run: |
+          Write-Host "Configuring Remote Desktop..."
+
+          # Enable RDP
+          Set-ItemProperty `
+            -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
+            -Name 'fDenyTSConnections' `
+            -Value 0
+
+          # Enable Network Level Authentication (MORE SECURE)
+          Set-ItemProperty `
+            -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+            -Name 'UserAuthentication' `
+            -Value 1
+
+          # TLS Security Layer
+          Set-ItemProperty `
+            -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+            -Name 'SecurityLayer' `
+            -Value 2
+
+          # Firewall Rule
+          netsh advfirewall firewall delete rule name='RDP-Tailscale' | Out-Null
+
+          netsh advfirewall firewall add rule `
+            name='RDP-Tailscale' `
+            dir=in `
+            action=allow `
+            protocol=TCP `
+            localport=3389 | Out-Null
+
+          Enable-NetFirewallRule -DisplayGroup 'Remote Desktop'
+
+          Restart-Service -Name TermService -Force
+
+          Write-Host "RDP configured securely ✅"
+
+      - name: 👤 Create Secure Local User
+        shell: pwsh
+        run: |
+          Write-Host "Generating secure password..."
+
+          Add-Type -AssemblyName System.Web
+          $password = [System.Web.Security.Membership]::GeneratePassword(24,6)
+
+          $securePass = ConvertTo-SecureString $password -AsPlainText -Force
+
+          # Remove old user if exists
+          if (Get-LocalUser -Name $env:RDP_USER -ErrorAction SilentlyContinue) {
+            Remove-LocalUser -Name $env:RDP_USER
+          }
+
+          New-LocalUser `
+            -Name $env:RDP_USER `
+            -Password $securePass `
+            -AccountNeverExpires `
+            -PasswordNeverExpires `
+            -UserMayNotChangePassword
+
+          Add-LocalGroupMember -Group 'Administrators' -Member $env:RDP_USER
+          Add-LocalGroupMember -Group 'Remote Desktop Users' -Member $env:RDP_USER
+
+          echo "RDP_PASS=$password" >> $env:GITHUB_ENV
+
+          Write-Host "Secure user created successfully ✅"
+
+      - name: 🐾 Install Tailscale
+        shell: pwsh
+        run: |
+          Write-Host "Downloading latest Tailscale installer..."
+
+          $installerPath = "$env:TEMP\tailscale.msi"
+
+          Invoke-WebRequest `
+            -Uri 'https://pkgs.tailscale.com/stable/tailscale-setup-latest.msi' `
+            -OutFile $installerPath
+
+          Write-Host "Installing Tailscale silently..."
+
+          Start-Process msiexec.exe `
+            -ArgumentList '/i', "`"$installerPath`"", '/quiet', '/norestart' `
+            -Wait
+
+          $tsExe = "$env:ProgramFiles\Tailscale\tailscale.exe"
+
+          if (-not (Test-Path $tsExe)) {
+            Write-Error 'Tailscale installation failed!'
+            exit 1
+          }
+
+          Write-Host "Connecting to Tailscale network..."
+
+          & $tsExe up `
+            --authkey="${{ secrets.TAILSCALE_AUTH_KEY }}" `
+            --hostname="gh-rdp-${{ github.run_id }}" `
+            --unattended `
+            --accept-routes
+
+          Start-Sleep -Seconds 15
+
+          Write-Host "Tailscale connected successfully ✅"
+
+      - name: 🌐 Verify RDP Connectivity
+        shell: pwsh
+        run: |
+          $tsExe = "$env:ProgramFiles\Tailscale\tailscale.exe"
+          $tsIP = (& $tsExe ip -4).Trim()
+
+          if (-not $tsIP) {
+            Write-Error 'Failed to obtain Tailscale IP!'
+            exit 1
+          }
+
+          echo "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
+
+          Write-Host "Testing RDP port accessibility..."
+
+          $test = Test-NetConnection `
+            -ComputerName $tsIP `
+            -Port 3389 `
+            -WarningAction SilentlyContinue
+
+          if (-not $test.TcpTestSucceeded) {
+            Write-Error 'RDP port test failed!'
+            exit 1
+          }
+
+          Write-Host "RDP is reachable ✅"
+
+      - name: 📊 Generate Dashboard Summary
+        shell: pwsh
+        run: |
+          $summary = @"
+          ## 🚀 Windows RDP Session Ready
+
+          | Parameter | Value |
+          |-----------|-------|
+          | 🖥️ OS | `${{ inputs.windows_version }}` |
+          | 🌐 Tailscale IP | `$env:TAILSCALE_IP` |
+          | 👤 Username | `$env:RDP_USER` |
+          | 🔑 Password | `$env:RDP_PASS` |
+          | ⏱️ Duration | `${{ inputs.duration_hours }} Hour(s)` |
+
+          ---
+
+          ### 📌 Important Notes
+
+          - Connect using Microsoft Remote Desktop Client
+          - Keep the GitHub Actions workflow running
+          - Do not terminate the PowerShell process
+          - Session ends automatically after selected duration
+          - Access only available through Tailscale VPN
+
+          "@
+
+          $summary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+
+      - name: ⏳ Keep Session Alive
+        shell: pwsh
+        run: |
+          Write-Host '========================================='
+          Write-Host '        WINDOWS RDP SESSION ACTIVE       '
+          Write-Host '========================================='
+          Write-Host "OS       : ${{ inputs.windows_version }}"
+          Write-Host "IP       : $env:TAILSCALE_IP"
+          Write-Host "Username : $env:RDP_USER"
+          Write-Host "Password : $env:RDP_PASS"
+          Write-Host '========================================='
+
+          $hours = [int]'${{ inputs.duration_hours }}'
+          $seconds = $hours * 3600
+
+          Write-Host "Maintaining session for $hours hour(s)..."
+
+          # Lightweight keep-alive loop
+          for ($i = 0; $i -lt $seconds; $i += 60) {
+            Start-Sleep -Seconds 60
+            Write-Host "Session active... elapsed: $i seconds"
+          }
+
           Write-Host 'Session completed.'
