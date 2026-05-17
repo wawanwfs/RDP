@@ -6,15 +6,43 @@ on:
       os_selection:
         description: 'Pilih Sistem Operasi & Versi'
         required: true
-        default: 'windows-latest'
+        default: 'windows-2025'
         type: choice
         options:
+          # Windows x64
           - 'windows-latest'
+          - 'windows-2025'
           - 'windows-2022'
+
+          # Windows ARM64
+          - 'windows-11-arm'
+
+          # Ubuntu x64
           - 'ubuntu-latest'
+          - 'ubuntu-24.04'
           - 'ubuntu-22.04'
+
+          # Ubuntu ARM64
+          - 'ubuntu-24.04-arm'
+          - 'ubuntu-22.04-arm'
+
+          # macOS ARM64
           - 'macos-latest'
-          - 'macos-13'
+          - 'macos-15'
+          - 'macos-14'
+
+          # macOS Intel
+          - 'macos-15-intel'
+
+      access_method:
+        description: 'Pilih Metode Akses Remote'
+        required: true
+        default: 'native'
+        type: choice
+        options:
+          - 'native'
+          - 'novnc'
+
       duration_hours:
         description: 'Durasi Sesi Aktif (Jam)'
         required: true
@@ -27,160 +55,623 @@ on:
 
 jobs:
   remote-setup:
-    name: 🖥️ Setup ${{ inputs.os_selection }}
+    name: 🖥️ Setup ${{ inputs.os_selection }} via ${{ inputs.access_method }}
     runs-on: ${{ inputs.os_selection }}
     timeout-minutes: 360
 
     steps:
-      - name: 🔑 Generate Secure Credentials (Cross-Platform)
+      # =========================================================
+      # 🔑 GLOBAL CREDENTIALS
+      # =========================================================
+      - name: 🔑 Generate Secure Credentials
         shell: pwsh
         run: |
-          Write-Host "Membuat kredensial yang aman..."
-          $chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*"
-          $pass = -join ((1..14) | ForEach-Object { $chars[(Get-Random -Maximum $chars.Length)] })
-          
-          # Simpan password secara global
-          echo "ACCESS_PASS=$pass" >> $env:GITHUB_ENV
-          echo "ACCESS_USER=DevUser" >> $env:GITHUB_ENV
+          Write-Host "Generating secure credentials..."
+
+          $upper   = [char[]](65..90)   | Get-Random -Count 4
+          $lower   = [char[]](97..122)  | Get-Random -Count 4
+          $number  = [char[]](48..57)   | Get-Random -Count 4
+          $special = [char[]]@(33,64,35,36,42,43,45,61) | Get-Random -Count 4
+
+          $password = -join ($upper + $lower + $number + $special | Sort-Object { Get-Random })
+
+          $vncChars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
+          $vncPass = -join ((1..8) | ForEach-Object {
+            $vncChars[(Get-Random -Maximum $vncChars.Length)]
+          })
+
+          "ACCESS_USER=devuser" | Out-File -Append -FilePath $env:GITHUB_ENV -Encoding utf8
+          "ACCESS_PASS=$password" | Out-File -Append -FilePath $env:GITHUB_ENV -Encoding utf8
+          "VNC_PASS=$vncPass" | Out-File -Append -FilePath $env:GITHUB_ENV -Encoding utf8
+
+          Write-Host "Credentials generated successfully"
 
       # =========================================================
-      # 🪟 WINDOWS SETUP & OPTIMIZATION
+      # 🪟 WINDOWS BASE SETUP
       # =========================================================
-      - name: 🪟 Setup Windows (RDP)
-        if: startsWith(inputs.os_selection, 'windows')
+      - name: 🪟 Setup Windows Base RDP
+        if: ${{ startsWith(inputs.os_selection, 'windows') }}
         shell: pwsh
         run: |
-          Write-Host "Mengoptimalkan Windows & Setup RDP..."
-          
-          # 1. Optimasi Performa
-          powercfg -setactive SCHEME_MIN; powercfg -h off
-          Stop-Service -Name "SysMain", "WSearch" -Force -ErrorAction SilentlyContinue
-          Set-Service -Name "SysMain", "WSearch" -StartupType Disabled -ErrorAction SilentlyContinue
-          Set-Service -Name "Audiosrv" -StartupType Automatic -ErrorAction SilentlyContinue; Start-Service -Name "Audiosrv" -ErrorAction SilentlyContinue
-          New-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" -Name "VisualFXSetting" -Value 2 -PropertyType DWORD -Force | Out-Null
-          
-          # 2. Setup RDP
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
-          netsh advfirewall firewall add rule name="RDP-Tailscale" dir=in action=allow protocol=TCP localport=3389 | Out-Null
-          Restart-Service -Name TermService -Force
-          
-          # 3. Create User
+          Write-Host "========================================="
+          Write-Host "       SETUP WINDOWS BASE STARTED        "
+          Write-Host "========================================="
+
+          powercfg -setactive SCHEME_MIN
+          powercfg -hibernate off
+
+          $services = @(
+            "SysMain",
+            "WSearch",
+            "DiagTrack",
+            "dmwappushservice",
+            "MapsBroker",
+            "XblGameSave",
+            "XboxNetApiSvc",
+            "RetailDemo",
+            "TabletInputService"
+          )
+
+          foreach ($svc in $services) {
+            Stop-Service -Name $svc -Force -ErrorAction SilentlyContinue
+            Set-Service -Name $svc -StartupType Disabled -ErrorAction SilentlyContinue
+          }
+
+          Set-Service -Name "Audiosrv" -StartupType Automatic -ErrorAction SilentlyContinue
+          Start-Service -Name "Audiosrv" -ErrorAction SilentlyContinue
+
+          $regPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects"
+          New-Item -Path $regPath -Force -ErrorAction SilentlyContinue | Out-Null
+          Set-ItemProperty -Path $regPath -Name "VisualFXSetting" -Value 2 -Force -ErrorAction SilentlyContinue
+
+          Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue
+
+          # Enable RDP
+          Set-ItemProperty `
+            -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
+            -Name "fDenyTSConnections" `
+            -Value 0 `
+            -Force
+
+          # Compatibility mode for GitHub runner RDP
+          Set-ItemProperty `
+            -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+            -Name "UserAuthentication" `
+            -Value 0 `
+            -Force
+
+          Set-ItemProperty `
+            -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+            -Name "SecurityLayer" `
+            -Value 0 `
+            -Force
+
+          Set-ItemProperty `
+            -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+            -Name "ColorDepth" `
+            -Value 4 `
+            -Force `
+            -ErrorAction SilentlyContinue
+
+          netsh advfirewall firewall delete rule name="RDP-Tailscale" 2>$null
+          netsh advfirewall firewall add rule `
+            name="RDP-Tailscale" `
+            dir=in `
+            action=allow `
+            protocol=TCP `
+            localport=3389 | Out-Null
+
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop" -ErrorAction SilentlyContinue
+
           $securePass = ConvertTo-SecureString $env:ACCESS_PASS -AsPlainText -Force
-          New-LocalUser -Name $env:ACCESS_USER -Password $securePass -AccountNeverExpires
+
+          if (Get-LocalUser -Name $env:ACCESS_USER -ErrorAction SilentlyContinue) {
+            Remove-LocalUser -Name $env:ACCESS_USER
+          }
+
+          New-LocalUser `
+            -Name $env:ACCESS_USER `
+            -Password $securePass `
+            -AccountNeverExpires `
+            -PasswordNeverExpires `
+            -UserMayNotChangePassword
+
           Add-LocalGroupMember -Group "Administrators" -Member $env:ACCESS_USER
           Add-LocalGroupMember -Group "Remote Desktop Users" -Member $env:ACCESS_USER
-          
-          echo "ACCESS_PROTO=RDP" >> $env:GITHUB_ENV
-          echo "ACCESS_PORT=3389" >> $env:GITHUB_ENV
+
+          Restart-Service -Name TermService -Force
+
+          if ("${{ inputs.access_method }}" -eq "native") {
+            "ACCESS_PROTO=RDP" | Out-File -Append -FilePath $env:GITHUB_ENV -Encoding utf8
+            "ACCESS_PORT=3389" | Out-File -Append -FilePath $env:GITHUB_ENV -Encoding utf8
+          }
+
+          Write-Host "✅ Windows base RDP setup completed"
 
       # =========================================================
-      # 🐧 LINUX SETUP & OPTIMIZATION (UBUNTU)
+      # 🪟 WINDOWS noVNC SETUP
       # =========================================================
-      - name: 🐧 Setup Linux (XRDP + LXDE)
-        if: startsWith(inputs.os_selection, 'ubuntu')
+      - name: 🪟 Setup Windows noVNC
+        if: ${{ startsWith(inputs.os_selection, 'windows') && inputs.access_method == 'novnc' }}
+        shell: pwsh
+        run: |
+          Write-Host "========================================="
+          Write-Host "       SETUP WINDOWS noVNC STARTED       "
+          Write-Host "========================================="
+
+          if (-not (Get-Command choco -ErrorAction SilentlyContinue)) {
+            Write-Error "Chocolatey not found on this Windows runner."
+            exit 1
+          }
+
+          Write-Host "Installing TightVNC Server..."
+
+          choco install tightvnc -y --no-progress --install-arguments="'/quiet /norestart ADDLOCAL=Server SET_USEVNCAUTHENTICATION=1 VALUE_OF_USEVNCAUTHENTICATION=1 SET_PASSWORD=1 VALUE_OF_PASSWORD=$env:VNC_PASS SET_USECONTROLAUTHENTICATION=1 VALUE_OF_USECONTROLAUTHENTICATION=1 SET_CONTROLPASSWORD=1 VALUE_OF_CONTROLPASSWORD=$env:VNC_PASS'"
+
+          Start-Sleep -Seconds 10
+
+          $tightService = Get-Service -Name "tvnserver" -ErrorAction SilentlyContinue
+          if ($tightService) {
+            Restart-Service -Name "tvnserver" -Force -ErrorAction SilentlyContinue
+          }
+
+          netsh advfirewall firewall delete rule name="VNC-Tailscale" 2>$null
+          netsh advfirewall firewall add rule `
+            name="VNC-Tailscale" `
+            dir=in `
+            action=allow `
+            protocol=TCP `
+            localport=5900 | Out-Null
+
+          netsh advfirewall firewall delete rule name="noVNC-Tailscale" 2>$null
+          netsh advfirewall firewall add rule `
+            name="noVNC-Tailscale" `
+            dir=in `
+            action=allow `
+            protocol=TCP `
+            localport=6080 | Out-Null
+
+          Write-Host "Installing noVNC and websockify..."
+
+          $novncPath = "$env:USERPROFILE\noVNC"
+
+          if (Test-Path $novncPath) {
+            Remove-Item $novncPath -Recurse -Force
+          }
+
+          git clone --depth=1 https://github.com/novnc/noVNC.git $novncPath
+
+          py -3 -m pip install --user --upgrade pip
+          py -3 -m pip install --user websockify
+
+          Start-Process `
+            -FilePath "py" `
+            -ArgumentList @(
+              "-3",
+              "-m",
+              "websockify",
+              "--web=$novncPath",
+              "0.0.0.0:6080",
+              "localhost:5900"
+            ) `
+            -WindowStyle Hidden
+
+          Start-Sleep -Seconds 10
+
+          "ACCESS_PROTO=noVNC Browser" | Out-File -Append -FilePath $env:GITHUB_ENV -Encoding utf8
+          "ACCESS_PORT=6080" | Out-File -Append -FilePath $env:GITHUB_ENV -Encoding utf8
+
+          Write-Host "✅ Windows noVNC setup completed"
+          Write-Host "VNC Password: $env:VNC_PASS"
+
+      # =========================================================
+      # 🐧 UBUNTU NATIVE XRDP SETUP
+      # =========================================================
+      - name: 🐧 Setup Ubuntu XRDP LXDE
+        if: ${{ startsWith(inputs.os_selection, 'ubuntu') && inputs.access_method == 'native' }}
         shell: bash
         run: |
-          echo "Mengoptimalkan Ubuntu & Setup XRDP..."
+          set -e
+
+          echo "========================================="
+          echo "       SETUP UBUNTU XRDP STARTED         "
+          echo "========================================="
+
           export DEBIAN_FRONTEND=noninteractive
-          
-          # 1. Update & Install Lightweight Desktop (LXDE)
+
           sudo apt-get update -y
-          sudo apt-get install -y xrdp lxde-core lxterminal tightvncserver
-          
-          # 2. Optimasi XRDP (Turunkan color depth untuk koneksi lebih cepat & stabil)
-          sudo sed -i 's/max_bpp=32/max_bpp=16/g' /etc/xrdp/xrdp.ini
-          echo "lxsession -s LXDE -e LXDE" > ~/.xsession
-          sudo cp ~/.xsession /etc/skel/
-          
-          # 3. Create User
-          sudo useradd -m -s /bin/bash $ACCESS_USER
+
+          sudo apt-get install -y \
+            xrdp \
+            lxde-core \
+            lxterminal \
+            dbus-x11 \
+            x11-xserver-utils \
+            policykit-1 \
+            net-tools
+
+          if id "$ACCESS_USER" >/dev/null 2>&1; then
+            sudo userdel -r "$ACCESS_USER" || true
+          fi
+
+          sudo useradd -m -s /bin/bash "$ACCESS_USER"
           echo "$ACCESS_USER:$ACCESS_PASS" | sudo chpasswd
-          sudo usermod -aG sudo $ACCESS_USER
-          
-          # 4. Restart Service
-          sudo systemctl restart xrdp
+          sudo usermod -aG sudo "$ACCESS_USER"
+
+          echo "startlxde" | sudo tee "/home/$ACCESS_USER/.xsession" >/dev/null
+          sudo chown "$ACCESS_USER:$ACCESS_USER" "/home/$ACCESS_USER/.xsession"
+
+          echo "startlxde" | sudo tee /etc/skel/.xsession >/dev/null
+
+          sudo sed -i 's/^max_bpp=.*/max_bpp=16/g' /etc/xrdp/xrdp.ini || true
+          sudo sed -i 's/^xserverbpp=.*/xserverbpp=16/g' /etc/xrdp/xrdp.ini || true
+
+          sudo adduser xrdp ssl-cert || true
+
           sudo systemctl enable xrdp
-          
-          echo "ACCESS_PROTO=XRDP" >> $GITHUB_ENV
-          echo "ACCESS_PORT=3389" >> $GITHUB_ENV
+          sudo systemctl restart xrdp
+
+          echo "ACCESS_PROTO=XRDP" >> "$GITHUB_ENV"
+          echo "ACCESS_PORT=3389" >> "$GITHUB_ENV"
+
+          echo "✅ Ubuntu XRDP setup completed"
 
       # =========================================================
-      # 🍎 MACOS SETUP & OPTIMIZATION
+      # 🐧 UBUNTU noVNC SETUP
       # =========================================================
-      - name: 🍎 Setup macOS (VNC / Screen Sharing)
-        if: startsWith(inputs.os_selection, 'macos')
+      - name: 🐧 Setup Ubuntu noVNC
+        if: ${{ startsWith(inputs.os_selection, 'ubuntu') && inputs.access_method == 'novnc' }}
         shell: bash
         run: |
-          echo "Mengoptimalkan macOS & Setup Screen Sharing..."
-          
-          # 1. Optimasi Power (Mencegah mesin tidur saat remote)
-          sudo pmset -a displaysleep 0 disk 0 sleep 0
-          
-          # 2. Create User
-          sudo sysadminctl -addUser $ACCESS_USER -fullName "Developer" -password "$ACCESS_PASS" -admin
-          
-          # 3. Enable Apple Remote Desktop (Screen Sharing)
-          sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart -activate -configure -access -on -users $ACCESS_USER -privs -all -restart -agent -menu
-          sudo defaults write /var/db/launchd.db/com.apple.launchd/overrides.plist com.apple.screensharing -dict Disabled -bool false
-          sudo launchctl load -w /System/Library/LaunchDaemons/com.apple.screensharing.plist || true
-          
-          echo "ACCESS_PROTO=VNC (Screen Sharing)" >> $GITHUB_ENV
-          echo "ACCESS_PORT=5900" >> $GITHUB_ENV
+          set -e
+
+          echo "========================================="
+          echo "       SETUP UBUNTU noVNC STARTED        "
+          echo "========================================="
+
+          export DEBIAN_FRONTEND=noninteractive
+
+          sudo apt-get update -y
+
+          sudo apt-get install -y \
+            lxde-core \
+            lxterminal \
+            dbus-x11 \
+            tigervnc-standalone-server \
+            tigervnc-common \
+            novnc \
+            websockify \
+            net-tools
+
+          if id "$ACCESS_USER" >/dev/null 2>&1; then
+            sudo userdel -r "$ACCESS_USER" || true
+          fi
+
+          sudo useradd -m -s /bin/bash "$ACCESS_USER"
+          echo "$ACCESS_USER:$ACCESS_PASS" | sudo chpasswd
+          sudo usermod -aG sudo "$ACCESS_USER"
+
+          sudo -u "$ACCESS_USER" mkdir -p "/home/$ACCESS_USER/.vnc"
+
+          echo "$VNC_PASS" | sudo -u "$ACCESS_USER" vncpasswd -f > /tmp/vncpasswd
+          sudo install -m 600 -o "$ACCESS_USER" -g "$ACCESS_USER" /tmp/vncpasswd "/home/$ACCESS_USER/.vnc/passwd"
+          rm -f /tmp/vncpasswd
+
+          sudo tee "/home/$ACCESS_USER/.vnc/xstartup" >/dev/null <<'EOF'
+          #!/bin/sh
+          unset SESSION_MANAGER
+          unset DBUS_SESSION_BUS_ADDRESS
+          startlxde &
+          EOF
+
+          sudo chmod +x "/home/$ACCESS_USER/.vnc/xstartup"
+          sudo chown -R "$ACCESS_USER:$ACCESS_USER" "/home/$ACCESS_USER/.vnc"
+
+          sudo -u "$ACCESS_USER" tigervncserver -kill :1 >/dev/null 2>&1 || true
+
+          sudo -u "$ACCESS_USER" tigervncserver :1 \
+            -geometry 1366x768 \
+            -depth 24 \
+            -localhost yes
+
+          nohup websockify \
+            --web=/usr/share/novnc \
+            0.0.0.0:6080 \
+            localhost:5901 \
+            >/tmp/novnc.log 2>&1 &
+
+          sleep 5
+
+          echo "ACCESS_PROTO=noVNC Browser" >> "$GITHUB_ENV"
+          echo "ACCESS_PORT=6080" >> "$GITHUB_ENV"
+
+          echo "✅ Ubuntu noVNC setup completed"
+          echo "VNC Password: $VNC_PASS"
 
       # =========================================================
-      # 🐾 TAILSCALE & DASHBOARD
+      # 🍎 MACOS BASE VNC SETUP
       # =========================================================
-      - name: 🐾 Establish Tailscale Connection
-        uses: tailscale/github-action@v2
+      - name: 🍎 Setup macOS Screen Sharing
+        if: ${{ startsWith(inputs.os_selection, 'macos') }}
+        shell: bash
+        run: |
+          set +e
+
+          echo "========================================="
+          echo "       SETUP MACOS VNC STARTED           "
+          echo "========================================="
+
+          sudo pmset -a displaysleep 0 disk 0 sleep 0
+
+          if id "$ACCESS_USER" >/dev/null 2>&1; then
+            sudo sysadminctl -deleteUser "$ACCESS_USER" -secure
+          fi
+
+          sudo sysadminctl \
+            -addUser "$ACCESS_USER" \
+            -fullName "Developer User" \
+            -password "$ACCESS_PASS" \
+            -admin
+
+          sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
+            -activate \
+            -configure \
+            -access -on \
+            -users "$ACCESS_USER" \
+            -privs -all \
+            -restart -agent \
+            -menu
+
+          sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart \
+            -configure \
+            -clientopts \
+            -setvnclegacy -vnclegacy yes \
+            -setvncpw -vncpw "$VNC_PASS"
+
+          sudo launchctl enable system/com.apple.screensharing 2>/dev/null || true
+          sudo launchctl kickstart -k system/com.apple.screensharing 2>/dev/null || true
+
+          if [ "${{ inputs.access_method }}" = "native" ]; then
+            echo "ACCESS_PROTO=VNC / Screen Sharing" >> "$GITHUB_ENV"
+            echo "ACCESS_PORT=5900" >> "$GITHUB_ENV"
+          fi
+
+          echo "✅ macOS Screen Sharing setup completed"
+
+      # =========================================================
+      # 🍎 MACOS noVNC SETUP
+      # =========================================================
+      - name: 🍎 Setup macOS noVNC
+        if: ${{ startsWith(inputs.os_selection, 'macos') && inputs.access_method == 'novnc' }}
+        shell: bash
+        run: |
+          set -e
+
+          echo "========================================="
+          echo "       SETUP MACOS noVNC STARTED         "
+          echo "========================================="
+
+          NOVNC_DIR="$HOME/noVNC"
+
+          rm -rf "$NOVNC_DIR"
+          git clone --depth=1 https://github.com/novnc/noVNC.git "$NOVNC_DIR"
+
+          python3 -m pip install --user --upgrade pip
+          python3 -m pip install --user websockify
+
+          export PATH="$HOME/Library/Python/3.*/bin:$PATH"
+
+          nohup python3 -m websockify \
+            --web="$NOVNC_DIR" \
+            0.0.0.0:6080 \
+            localhost:5900 \
+            >/tmp/novnc.log 2>&1 &
+
+          sleep 5
+
+          echo "ACCESS_PROTO=noVNC Browser" >> "$GITHUB_ENV"
+          echo "ACCESS_PORT=6080" >> "$GITHUB_ENV"
+
+          echo "✅ macOS noVNC setup completed"
+          echo "VNC Password: $VNC_PASS"
+
+      # =========================================================
+      # 🐾 TAILSCALE CONNECTION
+      # =========================================================
+      - name: 🔎 Check Tailscale Secret
+        shell: pwsh
+        run: |
+          if ([string]::IsNullOrWhiteSpace("${{ secrets.TAILSCALE_AUTH_KEY }}")) {
+            Write-Error "Secret TAILSCALE_AUTH_KEY belum diset di GitHub Repository Secrets."
+            exit 1
+          }
+
+          Write-Host "TAILSCALE_AUTH_KEY is available"
+
+      - name: 🐾 Connect Tailscale
+        uses: tailscale/github-action@v4
         with:
           authkey: ${{ secrets.TAILSCALE_AUTH_KEY }}
-          hostname: gh-runner-${{ github.run_id }}
+          hostname: remote-${{ github.run_id }}
+          version: latest
+          args: --accept-routes --accept-dns=false
+          timeout: 3m
+          retry: 5
 
+      - name: 🌐 Export Tailscale IP
+        shell: pwsh
+        run: |
+          Write-Host "Getting Tailscale IP..."
+
+          $tsIP = $null
+          $retry = 0
+
+          while (-not $tsIP -and $retry -lt 20) {
+            Start-Sleep -Seconds 5
+            $raw = tailscale ip -4 2>$null
+
+            if ($raw) {
+              $tsIP = ($raw | Select-Object -First 1).Trim()
+            }
+
+            $retry++
+            Write-Host "Waiting for Tailscale IP... attempt $retry"
+          }
+
+          if (-not $tsIP) {
+            Write-Error "Failed to obtain Tailscale IP."
+            exit 1
+          }
+
+          "TAILSCALE_IP=$tsIP" | Out-File -Append -FilePath $env:GITHUB_ENV -Encoding utf8
+
+          Write-Host "✅ Tailscale IP: $tsIP"
+
+      # =========================================================
+      # ✅ VERIFY REMOTE PORT
+      # =========================================================
+      - name: ✅ Verify Remote Port
+        shell: pwsh
+        run: |
+          Write-Host "Verifying remote port..."
+
+          $ip = $env:TAILSCALE_IP
+          $port = [int]$env:ACCESS_PORT
+
+          if ([string]::IsNullOrWhiteSpace($ip)) {
+            Write-Error "TAILSCALE_IP is empty"
+            exit 1
+          }
+
+          if (-not $port) {
+            Write-Error "ACCESS_PORT is empty"
+            exit 1
+          }
+
+          $client = New-Object System.Net.Sockets.TcpClient
+          $async = $client.BeginConnect($ip, $port, $null, $null)
+          $success = $async.AsyncWaitHandle.WaitOne(15000, $false)
+
+          if (-not $success) {
+            $client.Close()
+            Write-Warning "Port $port is not reachable yet. The session may still work after a short delay."
+          }
+          else {
+            $client.EndConnect($async)
+            $client.Close()
+            Write-Host "✅ Port $port verified"
+          }
+
+      # =========================================================
+      # 📊 DASHBOARD SUMMARY
+      # =========================================================
       - name: 📊 Generate Action Dashboard Summary
         shell: pwsh
         run: |
-          # Ambil IP Tailscale (Cross-Platform via PowerShell)
-          $tsIP = (tailscale ip -4).Trim()
-          echo "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
-          
-          $summary = @"
-          ## 🚀 Remote Environment Siap!
-          
-          Lingkungan kerja **${{ inputs.os_selection }}** Anda telah dioptimasi dan siap digunakan.
-          
-          | Atribut | Detail |
-          |---------|--------|
-          | **🖥️ OS** | `${{ inputs.os_selection }}` |
-          | **📡 Protokol** | `$env:ACCESS_PROTO` |
-          | **🌐 IP Address**| `$tsIP` *(Gunakan IP ini)* |
-          | **🚪 Port** | `$env:ACCESS_PORT` |
-          | **👤 Username** | `$env:ACCESS_USER` |
-          | **🔑 Password** | `$env:ACCESS_PASS` |
-          | **⏱️ Durasi** | `${{ inputs.duration_hours }} Jam` |
-          
-          > 💡 **Klien yang disarankan:**
-          > - **Windows/Linux (RDP):** Gunakan *Remote Desktop Connection* bawaan Windows.
-          > - **macOS (VNC):** Gunakan aplikasi *Screen Sharing* bawaan Mac (ketik `vnc://$tsIP` di Safari/Finder) atau VNC Viewer.
-          "@
-          
-          echo $summary >> $env:GITHUB_STEP_SUMMARY
-          Write-Host "Detail akses berhasil di-export ke Dashboard Summary!"
+          $os = "${{ inputs.os_selection }}"
+          $method = "${{ inputs.access_method }}"
+          $tsIP = $env:TAILSCALE_IP
 
-      - name: ⏳ Maintain Connection (Keep-Alive)
+          if ($method -eq "novnc") {
+            $connectInfo = "http://$tsIP`:6080/vnc.html?host=$tsIP&port=6080&autoconnect=1"
+            $clientInfo = "Gunakan browser. Pastikan perangkat sudah login ke Tailscale yang sama."
+          }
+          elseif ($env:ACCESS_PORT -eq "5900") {
+            $connectInfo = "vnc://$tsIP"
+            $clientInfo = "Gunakan Screen Sharing / VNC Viewer"
+          }
+          else {
+            $connectInfo = "$tsIP"
+            $clientInfo = "Gunakan Microsoft Remote Desktop"
+          }
+
+          $summary = @"
+          ## 🚀 Remote Environment Ready
+
+          | Parameter | Value |
+          |----------|-------|
+          | 🖥️ OS | `$os` |
+          | 🔌 Access Method | `$method` |
+          | 📡 Protocol | `$env:ACCESS_PROTO` |
+          | 🌐 Tailscale IP | `$tsIP` |
+          | 🚪 Port | `$env:ACCESS_PORT` |
+          | 👤 System Username | `$env:ACCESS_USER` |
+          | 🔑 System Password | `$env:ACCESS_PASS` |
+          | 🖱️ VNC Password | `$env:VNC_PASS` |
+          | ⏱️ Duration | `${{ inputs.duration_hours }} Hour(s)` |
+
+          ---
+
+          ### Cara Login
+
+          **Connection**
+          - URL / Host: `$connectInfo`
+          - Client: `$clientInfo`
+
+          **Jika memakai noVNC**
+          - Buka URL noVNC di browser.
+          - Jika diminta password VNC, gunakan: `$env:VNC_PASS`
+          - Jika diminta login OS, gunakan:
+            - Username: `$env:ACCESS_USER`
+            - Password: `$env:ACCESS_PASS`
+
+          **Jika memakai RDP / XRDP**
+          - Host: `$connectInfo`
+          - Username: `$env:ACCESS_USER`
+          - Password: `$env:ACCESS_PASS`
+
+          **Jika memakai macOS VNC Native**
+          - Host: `$connectInfo`
+          - Username: `$env:ACCESS_USER`
+          - Password: `$env:ACCESS_PASS`
+          - VNC Password jika diminta: `$env:VNC_PASS`
+
+          ---
+
+          ### Catatan
+          - Pastikan perangkat Anda sudah login ke Tailscale yang sama.
+          - Untuk noVNC, akses utama adalah port `6080`.
+          - Untuk RDP / XRDP, akses utama adalah port `3389`.
+          - Untuk macOS VNC native, akses utama adalah port `5900`.
+          - Jangan matikan workflow selama sesi masih digunakan.
+
+          "@
+
+          $summary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+
+          Write-Host "✅ Dashboard summary generated"
+
+      # =========================================================
+      # ⏳ KEEP ALIVE
+      # =========================================================
+      - name: ⏳ Maintain Connection
         shell: pwsh
         run: |
-          Write-Host "========================================="
-          Write-Host "         SESI REMOTE SEDANG AKTIF        "
-          Write-Host "========================================="
-          Write-Host "OS       : ${{ inputs.os_selection }}"
-          Write-Host "Protokol : $env:ACCESS_PROTO"
-          Write-Host "IP       : $env:TAILSCALE_IP"
-          Write-Host "Username : $env:ACCESS_USER"
-          Write-Host "Password : $env:ACCESS_PASS"
-          Write-Host "========================================="
-          
+          Write-Host ""
+          Write-Host "╔══════════════════════════════════════╗"
+          Write-Host "║        REMOTE SESSION IS ACTIVE      ║"
+          Write-Host "╠══════════════════════════════════════╣"
+          Write-Host "║ OS       : ${{ inputs.os_selection }}"
+          Write-Host "║ Method   : ${{ inputs.access_method }}"
+          Write-Host "║ Protocol : $env:ACCESS_PROTO"
+          Write-Host "║ IP       : $env:TAILSCALE_IP"
+          Write-Host "║ Port     : $env:ACCESS_PORT"
+          Write-Host "║ Username : $env:ACCESS_USER"
+          Write-Host "║ Password : $env:ACCESS_PASS"
+          Write-Host "║ VNC Pass : $env:VNC_PASS"
+          Write-Host "╚══════════════════════════════════════╝"
+          Write-Host ""
+
           $hours = [int]"${{ inputs.duration_hours }}"
           $seconds = $hours * 3600
-          
-          Write-Host "Sesi akan dipertahankan selama $hours jam ($seconds detik)."
-          Start-Sleep -Seconds $seconds
+          $elapsed = 0
+
+          Write-Host "Session will stay active for $hours hour(s)."
+
+          while ($elapsed -lt $seconds) {
+            Write-Host "[$(Get-Date -Format 'HH:mm:ss')] ✅ Session active — elapsed $elapsed seconds"
+            Start-Sleep -Seconds 300
+            $elapsed += 300
+          }
+
+          Write-Host "Session completed."
