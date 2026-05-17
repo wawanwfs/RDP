@@ -1,0 +1,287 @@
+name: "🪟 Windows GPU RDP - GitHub Hosted T4"
+
+on:
+  workflow_dispatch:
+    inputs:
+      keep_alive_minutes:
+        description: "Durasi RDP aktif. Maksimum aman 360 menit."
+        required: true
+        default: "360"
+        type: choice
+        options:
+          - "60"
+          - "120"
+          - "240"
+          - "360"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-gpu-rdp-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows-gpu-rdp:
+    name: "🎮 Windows GPU RDP via Tailscale"
+    runs-on: windows-gpu-t4
+    timeout-minutes: 360
+
+    steps:
+      - name: "🎬 Start Banner"
+        shell: pwsh
+        run: |
+          Write-Host ""
+          Write-Host "╔════════════════════════════════════════════════════╗"
+          Write-Host "║          🪟 WINDOWS GPU RDP STARTING              ║"
+          Write-Host "║          🎮 GitHub Hosted GPU Runner              ║"
+          Write-Host "║          🔐 Secure Tunnel via Tailscale           ║"
+          Write-Host "║          ⚡ Windows Smooth Performance Tweaks     ║"
+          Write-Host "╚════════════════════════════════════════════════════╝"
+          Write-Host ""
+
+      - name: "👤 Create RDP User"
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          function Get-RandomChar {
+            param([char[]]$Chars)
+            $bytes = [byte[]]::new(4)
+            [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+            $index = [BitConverter]::ToUInt32($bytes, 0) % $Chars.Length
+            return $Chars[$index]
+          }
+
+          $upper   = [char[]]"ABCDEFGHJKLMNPQRSTUVWXYZ"
+          $lower   = [char[]]"abcdefghijkmnopqrstuvwxyz"
+          $number  = [char[]]"23456789"
+          $special = [char[]]"!@#$^&*-_=+?"
+          $all     = $upper + $lower + $number + $special
+
+          $chars = @()
+          1..5 | ForEach-Object { $chars += Get-RandomChar $upper }
+          1..5 | ForEach-Object { $chars += Get-RandomChar $lower }
+          1..5 | ForEach-Object { $chars += Get-RandomChar $number }
+          1..5 | ForEach-Object { $chars += Get-RandomChar $special }
+          1..4 | ForEach-Object { $chars += Get-RandomChar $all }
+
+          $password = -join ($chars | Sort-Object { [Guid]::NewGuid() })
+          $securePass = ConvertTo-SecureString $password -AsPlainText -Force
+          $userName = "RDP"
+
+          if (Get-LocalUser -Name $userName -ErrorAction SilentlyContinue) {
+            Set-LocalUser -Name $userName -Password $securePass
+            Enable-LocalUser -Name $userName
+            Write-Host "🔁 User RDP sudah ada, password di-reset."
+          } else {
+            New-LocalUser -Name $userName -Password $securePass -AccountNeverExpires -PasswordNeverExpires
+            Write-Host "✅ User RDP berhasil dibuat."
+          }
+
+          Add-LocalGroupMember -Group "Administrators" -Member $userName -ErrorAction SilentlyContinue
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member $userName -ErrorAction SilentlyContinue
+
+          Add-Content -Path $env:GITHUB_ENV -Value "RDP_USER=$userName"
+          Add-Content -Path $env:GITHUB_ENV -Value "RDP_PASS=$password"
+
+          Write-Host "✅ Credential RDP siap."
+
+      - name: "🛠️ Enable Secure RDP"
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          Write-Host "🔧 Mengaktifkan Remote Desktop..."
+
+          Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server" `
+            -Name "fDenyTSConnections" -Value 0 -Force
+
+          # NLA tetap ON agar lebih aman
+          Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" `
+            -Name "UserAuthentication" -Value 1 -Force
+
+          # TLS security layer
+          Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" `
+            -Name "SecurityLayer" -Value 2 -Force
+
+          Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" `
+            -Name "MinEncryptionLevel" -Value 3 -Force
+
+          $policyPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services"
+          New-Item -Path $policyPath -Force | Out-Null
+
+          New-ItemProperty -Path $policyPath -Name "KeepAliveEnable" -Value 1 -PropertyType DWord -Force | Out-Null
+          New-ItemProperty -Path $policyPath -Name "KeepAliveInterval" -Value 1 -PropertyType DWord -Force | Out-Null
+          New-ItemProperty -Path $policyPath -Name "MaxIdleTime" -Value 0 -PropertyType DWord -Force | Out-Null
+          New-ItemProperty -Path $policyPath -Name "MaxDisconnectionTime" -Value 0 -PropertyType DWord -Force | Out-Null
+
+          Restart-Service -Name TermService -Force
+
+          Write-Host "✅ RDP aktif dengan NLA + TLS."
+
+      - name: "⚡ Windows Performance Tweaks"
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Continue"
+
+          Write-Host "⚡ Mengaktifkan mode performa tinggi..."
+          powercfg /setactive SCHEME_MIN
+          powercfg /change monitor-timeout-ac 0
+          powercfg /change standby-timeout-ac 0
+          powercfg /change hibernate-timeout-ac 0
+
+          Write-Host "🎨 Mengurangi efek visual agar RDP lebih smooth..."
+          New-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" -Force | Out-Null
+          Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" `
+            -Name "VisualFXSetting" -Type DWord -Value 2
+
+          Set-ItemProperty -Path "HKCU:\Control Panel\Desktop" -Name "DragFullWindows" -Value "0" -ErrorAction SilentlyContinue
+          Set-ItemProperty -Path "HKCU:\Control Panel\Desktop\WindowMetrics" -Name "MinAnimate" -Value "0" -ErrorAction SilentlyContinue
+
+          Write-Host "🚀 Mengaktifkan service Windows Audio jika tersedia..."
+          Set-Service -Name Audiosrv -StartupType Automatic -ErrorAction SilentlyContinue
+          Start-Service -Name Audiosrv -ErrorAction SilentlyContinue
+
+          Write-Host "✅ Windows tweak selesai."
+
+      - name: "🐾 Connect Tailscale"
+        uses: tailscale/github-action@v4
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+          hostname: gh-win-gpu-rdp-${{ github.run_id }}
+          version: latest
+
+      - name: "🔥 Secure Firewall for Tailscale RDP"
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $tsExe = "$env:ProgramFiles\Tailscale\tailscale.exe"
+          if (-not (Test-Path $tsExe)) {
+            $tsExe = "tailscale.exe"
+          }
+
+          $tsIP = (& $tsExe ip -4 | Select-Object -First 1).Trim()
+
+          if (-not $tsIP) {
+            throw "❌ Tailscale IP tidak ditemukan."
+          }
+
+          Add-Content -Path $env:GITHUB_ENV -Value "TAILSCALE_IP=$tsIP"
+
+          Write-Host "🌐 Tailscale IP: $tsIP"
+
+          Get-NetFirewallRule -DisplayName "RDP-Tailscale-Only" -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+          Get-NetFirewallRule -DisplayName "RDP-Tailscale-Only-IPv6" -ErrorAction SilentlyContinue | Remove-NetFirewallRule
+
+          Get-NetFirewallRule -DisplayGroup "Remote Desktop" -ErrorAction SilentlyContinue | Disable-NetFirewallRule -ErrorAction SilentlyContinue
+
+          New-NetFirewallRule `
+            -DisplayName "RDP-Tailscale-Only" `
+            -Direction Inbound `
+            -Action Allow `
+            -Protocol TCP `
+            -LocalPort 3389 `
+            -RemoteAddress "100.64.0.0/10" `
+            -Profile Any | Out-Null
+
+          New-NetFirewallRule `
+            -DisplayName "RDP-Tailscale-Only-IPv6" `
+            -Direction Inbound `
+            -Action Allow `
+            -Protocol TCP `
+            -LocalPort 3389 `
+            -RemoteAddress "fd7a:115c:a1e0::/48" `
+            -Profile Any | Out-Null
+
+          Write-Host "✅ Firewall aman: hanya Tailscale yang boleh akses RDP."
+
+      - name: "🎮 Verify NVIDIA GPU"
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Continue"
+
+          Write-Host ""
+          Write-Host "╔══════════════════════════════════════════════╗"
+          Write-Host "║              🎮 GPU CHECK                   ║"
+          Write-Host "╚══════════════════════════════════════════════╝"
+          Write-Host ""
+
+          $gpuInfo = Get-CimInstance Win32_VideoController | Select-Object `
+            Name,
+            DriverVersion,
+            VideoProcessor,
+            @{Name="AdapterRAM_GB";Expression={[math]::Round(($_.AdapterRAM / 1GB), 2)}}
+
+          $gpuText = ($gpuInfo | Format-Table -AutoSize | Out-String).Trim()
+
+          if (-not $gpuText) {
+            $gpuText = "GPU tidak terbaca dari Win32_VideoController."
+          }
+
+          Write-Host $gpuText
+
+          if (Get-Command nvidia-smi -ErrorAction SilentlyContinue) {
+            Write-Host ""
+            Write-Host "🚀 NVIDIA-SMI DETECTED:"
+            nvidia-smi
+            $nvidiaText = nvidia-smi | Out-String
+          } else {
+            Write-Host ""
+            Write-Host "⚠️ nvidia-smi tidak ditemukan."
+            Write-Host "Jika runner benar GPU, cek image runner atau driver GPU."
+            $nvidiaText = "nvidia-smi tidak ditemukan."
+          }
+
+          $finalGpuText = @"
+$gpuText
+
+$nvidiaText
+"@
+
+          $gpuTextBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($finalGpuText))
+          Add-Content -Path $env:GITHUB_ENV -Value "GPU_INFO_B64=$gpuTextBase64"
+
+      - name: "✅ Verify RDP Port"
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $rdp = Get-Service -Name TermService
+          Write-Host "🟢 TermService Status: $($rdp.Status)"
+
+          $test = Test-NetConnection -ComputerName "127.0.0.1" -Port 3389 -WarningAction SilentlyContinue
+
+          if (-not $test.TcpTestSucceeded) {
+            throw "❌ Port RDP 3389 belum aktif."
+          }
+
+          Write-Host "✅ RDP port 3389 aktif."
+
+      - name: "🌟 Beautiful Access Summary"
+        shell: pwsh
+        run: |
+          $gpuInfo = "Tidak tersedia."
+          if ($env:GPU_INFO_B64) {
+            $gpuInfo = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($env:GPU_INFO_B64))
+          }
+
+          $summary = @"
+# 🪟 Windows GPU RDP Ready
+
+## 🔐 Detail Akses
+
+| Item | Value |
+|---|---|
+| 🌐 Address | ``$env:TAILSCALE_IP`` |
+| 👤 Username | ``$env:RDP_USER`` |
+| 🔑 Password | ``$env:RDP_PASS`` |
+| 🚪 Port | ``3389`` |
+| 🎮 Runner | ``windows-gpu-t4`` |
+| ⏳ Active Time | ``${{ inputs.keep_alive_minutes }} minutes`` |
+
+## 🎮 GPU Information
+
+````text
+$gpuInfo
