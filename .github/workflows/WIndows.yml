@@ -98,21 +98,43 @@ jobs:
               exit 1
           }
 
-      - name: 🐾 Establish Tailscale Connection
-        uses: tailscale/github-action@v2
-        with:
-          authkey: ${{ secrets.TAILSCALE_AUTH_KEY }}
-          hostname: gh-win-runner-${{ github.run_id }}
+      - name: 🐾 Install & Connect Tailscale (Windows Native)
+        shell: pwsh
+        run: |
+          Write-Host "Mengunduh Tailscale MSI..."
+          $tsUrl = "https://pkgs.tailscale.com/stable/tailscale-setup-latest.msi"
+          $installerPath = "$env:TEMP\tailscale.msi"
+          Invoke-WebRequest -Uri $tsUrl -OutFile $installerPath
+          
+          Write-Host "Menginstal Tailscale diam-diam (Silent Install)..."
+          Start-Process msiexec.exe -ArgumentList "/i", "`"$installerPath`"", "/quiet", "/norestart" -Wait
+          
+          Write-Host "Login ke jaringan Tailscale..."
+          $tsExe = "$env:ProgramFiles\Tailscale\tailscale.exe"
+          
+          # Menggunakan --unattended agar jalan di background sebagai service
+          & $tsExe up --authkey="${{ secrets.TAILSCALE_AUTH_KEY }}" --hostname="gh-win-runner-${{ github.run_id }}" --unattended --accept-routes
+          
+          # Tunggu sebentar sampai IP ter-assign
+          Start-Sleep -Seconds 10
 
       - name: 🌐 Verify RDP & Export Credentials
         shell: pwsh
         run: |
           # Ambil IP Tailscale
-          $tsIP = (tailscale ip -4).Trim()
+          $tsExe = "$env:ProgramFiles\Tailscale\tailscale.exe"
+          $tsIP = (& $tsExe ip -4).Trim()
+          
+          if (-not $tsIP) {
+              Write-Error "Gagal mendapatkan IP dari Tailscale!"
+              exit 1
+          }
+          
           echo "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
           
           Write-Host "Menguji koneksi ke port 3389 di IP: $tsIP..."
-          $testResult = Test-NetConnection -ComputerName $tsIP -Port 3389
+          $testResult = Test-NetConnection -ComputerName $tsIP -Port 3389 -WarningAction SilentlyContinue
+          
           if (-not $testResult.TcpTestSucceeded) {
               Write-Error "Gagal terhubung ke port RDP!"
               exit 1
