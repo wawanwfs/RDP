@@ -1,0 +1,186 @@
+name: 🌐 Multi-OS Remote Environment
+
+on:
+  workflow_dispatch:
+    inputs:
+      os_selection:
+        description: 'Pilih Sistem Operasi & Versi'
+        required: true
+        default: 'windows-latest'
+        type: choice
+        options:
+          - 'windows-latest'
+          - 'windows-2022'
+          - 'ubuntu-latest'
+          - 'ubuntu-22.04'
+          - 'macos-latest'
+          - 'macos-13'
+      duration_hours:
+        description: 'Durasi Sesi Aktif (Jam)'
+        required: true
+        default: '6'
+        type: choice
+        options:
+          - '1'
+          - '3'
+          - '6'
+
+jobs:
+  remote-setup:
+    name: 🖥️ Setup ${{ inputs.os_selection }}
+    runs-on: ${{ inputs.os_selection }}
+    timeout-minutes: 360
+
+    steps:
+      - name: 🔑 Generate Secure Credentials (Cross-Platform)
+        shell: pwsh
+        run: |
+          Write-Host "Membuat kredensial yang aman..."
+          $chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%^&*"
+          $pass = -join ((1..14) | ForEach-Object { $chars[(Get-Random -Maximum $chars.Length)] })
+          
+          # Simpan password secara global
+          echo "ACCESS_PASS=$pass" >> $env:GITHUB_ENV
+          echo "ACCESS_USER=DevUser" >> $env:GITHUB_ENV
+
+      # =========================================================
+      # 🪟 WINDOWS SETUP & OPTIMIZATION
+      # =========================================================
+      - name: 🪟 Setup Windows (RDP)
+        if: startsWith(inputs.os_selection, 'windows')
+        shell: pwsh
+        run: |
+          Write-Host "Mengoptimalkan Windows & Setup RDP..."
+          
+          # 1. Optimasi Performa
+          powercfg -setactive SCHEME_MIN; powercfg -h off
+          Stop-Service -Name "SysMain", "WSearch" -Force -ErrorAction SilentlyContinue
+          Set-Service -Name "SysMain", "WSearch" -StartupType Disabled -ErrorAction SilentlyContinue
+          Set-Service -Name "Audiosrv" -StartupType Automatic -ErrorAction SilentlyContinue; Start-Service -Name "Audiosrv" -ErrorAction SilentlyContinue
+          New-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\VisualEffects" -Name "VisualFXSetting" -Value 2 -PropertyType DWORD -Force | Out-Null
+          
+          # 2. Setup RDP
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0 -Force
+          netsh advfirewall firewall add rule name="RDP-Tailscale" dir=in action=allow protocol=TCP localport=3389 | Out-Null
+          Restart-Service -Name TermService -Force
+          
+          # 3. Create User
+          $securePass = ConvertTo-SecureString $env:ACCESS_PASS -AsPlainText -Force
+          New-LocalUser -Name $env:ACCESS_USER -Password $securePass -AccountNeverExpires
+          Add-LocalGroupMember -Group "Administrators" -Member $env:ACCESS_USER
+          Add-LocalGroupMember -Group "Remote Desktop Users" -Member $env:ACCESS_USER
+          
+          echo "ACCESS_PROTO=RDP" >> $env:GITHUB_ENV
+          echo "ACCESS_PORT=3389" >> $env:GITHUB_ENV
+
+      # =========================================================
+      # 🐧 LINUX SETUP & OPTIMIZATION (UBUNTU)
+      # =========================================================
+      - name: 🐧 Setup Linux (XRDP + LXDE)
+        if: startsWith(inputs.os_selection, 'ubuntu')
+        shell: bash
+        run: |
+          echo "Mengoptimalkan Ubuntu & Setup XRDP..."
+          export DEBIAN_FRONTEND=noninteractive
+          
+          # 1. Update & Install Lightweight Desktop (LXDE)
+          sudo apt-get update -y
+          sudo apt-get install -y xrdp lxde-core lxterminal tightvncserver
+          
+          # 2. Optimasi XRDP (Turunkan color depth untuk koneksi lebih cepat & stabil)
+          sudo sed -i 's/max_bpp=32/max_bpp=16/g' /etc/xrdp/xrdp.ini
+          echo "lxsession -s LXDE -e LXDE" > ~/.xsession
+          sudo cp ~/.xsession /etc/skel/
+          
+          # 3. Create User
+          sudo useradd -m -s /bin/bash $ACCESS_USER
+          echo "$ACCESS_USER:$ACCESS_PASS" | sudo chpasswd
+          sudo usermod -aG sudo $ACCESS_USER
+          
+          # 4. Restart Service
+          sudo systemctl restart xrdp
+          sudo systemctl enable xrdp
+          
+          echo "ACCESS_PROTO=XRDP" >> $GITHUB_ENV
+          echo "ACCESS_PORT=3389" >> $GITHUB_ENV
+
+      # =========================================================
+      # 🍎 MACOS SETUP & OPTIMIZATION
+      # =========================================================
+      - name: 🍎 Setup macOS (VNC / Screen Sharing)
+        if: startsWith(inputs.os_selection, 'macos')
+        shell: bash
+        run: |
+          echo "Mengoptimalkan macOS & Setup Screen Sharing..."
+          
+          # 1. Optimasi Power (Mencegah mesin tidur saat remote)
+          sudo pmset -a displaysleep 0 disk 0 sleep 0
+          
+          # 2. Create User
+          sudo sysadminctl -addUser $ACCESS_USER -fullName "Developer" -password "$ACCESS_PASS" -admin
+          
+          # 3. Enable Apple Remote Desktop (Screen Sharing)
+          sudo /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart -activate -configure -access -on -users $ACCESS_USER -privs -all -restart -agent -menu
+          sudo defaults write /var/db/launchd.db/com.apple.launchd/overrides.plist com.apple.screensharing -dict Disabled -bool false
+          sudo launchctl load -w /System/Library/LaunchDaemons/com.apple.screensharing.plist || true
+          
+          echo "ACCESS_PROTO=VNC (Screen Sharing)" >> $GITHUB_ENV
+          echo "ACCESS_PORT=5900" >> $GITHUB_ENV
+
+      # =========================================================
+      # 🐾 TAILSCALE & DASHBOARD
+      # =========================================================
+      - name: 🐾 Establish Tailscale Connection
+        uses: tailscale/github-action@v2
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTH_KEY }}
+          hostname: gh-runner-${{ github.run_id }}
+
+      - name: 📊 Generate Action Dashboard Summary
+        shell: pwsh
+        run: |
+          # Ambil IP Tailscale (Cross-Platform via PowerShell)
+          $tsIP = (tailscale ip -4).Trim()
+          echo "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
+          
+          $summary = @"
+          ## 🚀 Remote Environment Siap!
+          
+          Lingkungan kerja **${{ inputs.os_selection }}** Anda telah dioptimasi dan siap digunakan.
+          
+          | Atribut | Detail |
+          |---------|--------|
+          | **🖥️ OS** | `${{ inputs.os_selection }}` |
+          | **📡 Protokol** | `$env:ACCESS_PROTO` |
+          | **🌐 IP Address**| `$tsIP` *(Gunakan IP ini)* |
+          | **🚪 Port** | `$env:ACCESS_PORT` |
+          | **👤 Username** | `$env:ACCESS_USER` |
+          | **🔑 Password** | `$env:ACCESS_PASS` |
+          | **⏱️ Durasi** | `${{ inputs.duration_hours }} Jam` |
+          
+          > 💡 **Klien yang disarankan:**
+          > - **Windows/Linux (RDP):** Gunakan *Remote Desktop Connection* bawaan Windows.
+          > - **macOS (VNC):** Gunakan aplikasi *Screen Sharing* bawaan Mac (ketik `vnc://$tsIP` di Safari/Finder) atau VNC Viewer.
+          "@
+          
+          echo $summary >> $env:GITHUB_STEP_SUMMARY
+          Write-Host "Detail akses berhasil di-export ke Dashboard Summary!"
+
+      - name: ⏳ Maintain Connection (Keep-Alive)
+        shell: pwsh
+        run: |
+          Write-Host "========================================="
+          Write-Host "         SESI REMOTE SEDANG AKTIF        "
+          Write-Host "========================================="
+          Write-Host "OS       : ${{ inputs.os_selection }}"
+          Write-Host "Protokol : $env:ACCESS_PROTO"
+          Write-Host "IP       : $env:TAILSCALE_IP"
+          Write-Host "Username : $env:ACCESS_USER"
+          Write-Host "Password : $env:ACCESS_PASS"
+          Write-Host "========================================="
+          
+          $hours = [int]"${{ inputs.duration_hours }}"
+          $seconds = $hours * 3600
+          
+          Write-Host "Sesi akan dipertahankan selama $hours jam ($seconds detik)."
+          Start-Sleep -Seconds $seconds
