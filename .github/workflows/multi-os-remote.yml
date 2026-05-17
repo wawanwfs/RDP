@@ -453,9 +453,12 @@ jobs:
 
           NOVNC_DIR="$HOME/noVNC"
           VENV_DIR="$HOME/novnc-venv"
+          CERT_DIR="$HOME/novnc-cert"
+          CERT_FILE="$CERT_DIR/self.pem"
 
           echo "Cleaning old noVNC files..."
-          rm -rf "$NOVNC_DIR" "$VENV_DIR"
+          rm -rf "$NOVNC_DIR" "$VENV_DIR" "$CERT_DIR"
+          mkdir -p "$CERT_DIR"
 
           echo "Cloning noVNC..."
           git clone --depth=1 https://github.com/novnc/noVNC.git "$NOVNC_DIR"
@@ -467,12 +470,24 @@ jobs:
           "$VENV_DIR/bin/python" -m pip install --upgrade pip
           "$VENV_DIR/bin/python" -m pip install websockify
 
-          echo "Starting noVNC websockify proxy..."
+          echo "Generating self-signed HTTPS certificate for noVNC..."
+          openssl req \
+            -new \
+            -x509 \
+            -days 7 \
+            -nodes \
+            -out "$CERT_FILE" \
+            -keyout "$CERT_FILE" \
+            -subj "/CN=novnc-runner"
+
+          echo "Starting noVNC with HTTPS / WSS..."
 
           # Prevent GitHub Actions from killing long-running background process
           export RUNNER_TRACKING_ID=""
 
           nohup "$VENV_DIR/bin/python" -m websockify \
+            --ssl-only \
+            --cert="$CERT_FILE" \
             --web="$NOVNC_DIR" \
             0.0.0.0:6080 \
             localhost:5900 \
@@ -486,13 +501,14 @@ jobs:
             exit 1
           fi
 
-          echo "ACCESS_PROTO=noVNC Browser" >> "$GITHUB_ENV"
+          echo "ACCESS_PROTO=noVNC Browser HTTPS" >> "$GITHUB_ENV"
           echo "ACCESS_PORT=6080" >> "$GITHUB_ENV"
+          echo "NOVNC_SSL=true" >> "$GITHUB_ENV"
 
-          echo "✅ macOS noVNC setup completed"
+          echo "✅ macOS noVNC HTTPS setup completed"
           echo "VNC Password: $VNC_PASS"
-          echo "noVNC running on port 6080"
-
+          echo "noVNC HTTPS running on port 6080"
+          
       # =========================================================
       # 🐾 TAILSCALE CONNECTION
       # =========================================================
@@ -590,8 +606,8 @@ jobs:
           $tsIP = $env:TAILSCALE_IP
 
           if ($method -eq "novnc") {
-            $connectInfo = "http://$tsIP`:6080/vnc.html?host=$tsIP&port=6080&autoconnect=1"
-            $clientInfo = "Gunakan browser. Pastikan perangkat sudah login ke Tailscale yang sama."
+            $connectInfo = "https://$tsIP`:6080/vnc.html?host=$tsIP&port=6080&encrypt=1&autoconnect=1"
+            $clientInfo = "Gunakan browser. Jika muncul certificate warning, klik Advanced lalu Proceed."
           }
           elseif ($env:ACCESS_PORT -eq "5900") {
             $connectInfo = "vnc://$tsIP"
