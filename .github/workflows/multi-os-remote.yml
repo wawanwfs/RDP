@@ -512,7 +512,6 @@ jobs:
           authkey: ${{ secrets.TAILSCALE_AUTH_KEY }}
           hostname: remote-${{ github.run_id }}
           version: latest
-          args: --accept-routes --accept-dns=false
           timeout: 3m
           retry: 5
 
