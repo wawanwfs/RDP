@@ -33,10 +33,10 @@ jobs:
         run: |
           Write-Host ""
           Write-Host "╔════════════════════════════════════════════════════╗"
-          Write-Host "║          🪟 WINDOWS GPU RDP STARTING              ║"
-          Write-Host "║          🎮 GitHub Hosted GPU Runner              ║"
-          Write-Host "║          🔐 Secure Tunnel via Tailscale           ║"
-          Write-Host "║          ⚡ Windows Smooth Performance Tweaks     ║"
+          Write-Host "║          🪟 WINDOWS GPU RDP STARTING               ║"
+          Write-Host "║          🎮 GitHub Hosted GPU Runner               ║"
+          Write-Host "║          🔐 Secure Tunnel via Tailscale            ║"
+          Write-Host "║          ⚡ Windows Smooth Performance Tweaks      ║"
           Write-Host "╚════════════════════════════════════════════════════╝"
           Write-Host ""
 
@@ -204,7 +204,7 @@ jobs:
 
           Write-Host ""
           Write-Host "╔══════════════════════════════════════════════╗"
-          Write-Host "║              🎮 GPU CHECK                   ║"
+          Write-Host "║              🎮 GPU CHECK                    ║"
           Write-Host "╚══════════════════════════════════════════════╝"
           Write-Host ""
 
@@ -235,10 +235,10 @@ jobs:
           }
 
           $finalGpuText = @"
-$gpuText
+          $gpuText
 
-$nvidiaText
-"@
+          $nvidiaText
+          "@
 
           $gpuTextBase64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($finalGpuText))
           Add-Content -Path $env:GITHUB_ENV -Value "GPU_INFO_B64=$gpuTextBase64"
@@ -268,20 +268,20 @@ $nvidiaText
           }
 
           $summary = @"
-# 🪟 Windows GPU RDP Ready
+          # 🪟 Windows GPU RDP Ready
 
-## 🔐 Detail Akses
+          ## 🔐 Detail Akses
 
-| Item | Value |
-|---|---|
-| 🌐 Address | ``$env:TAILSCALE_IP`` |
-| 👤 Username | ``$env:RDP_USER`` |
-| 🔑 Password | ``$env:RDP_PASS`` |
-| 🚪 Port | ``3389`` |
-| 🎮 Runner | ``windows-gpu-t4`` |
-| ⏳ Active Time | ``${{ inputs.keep_alive_minutes }} minutes`` |
+          | Item | Value |
+          |---|---|
+          | 🌐 Address | `$env:TAILSCALE_IP` |
+          | 👤 Username | `$env:RDP_USER` |
+          | 🔑 Password | `$env:RDP_PASS` |
+          | 🚪 Port | `3389` |
+          | 🎮 Runner | `windows-gpu-t4` |
+          | ⏳ Active Time | `${{ inputs.keep_alive_minutes }} minutes` |
 
-## 🎮 GPU Information
+          ## 🎮 GPU Information
 
-````text
-$gpuInfo
+          ```text
+          $gpuInfo
