@@ -40,7 +40,7 @@ jobs:
           Write-Host " Optimizing Windows for RDP Performance "
           Write-Host "==========================================="
 
-          # Power Optimization
+          # Power optimization
           powercfg -setactive SCHEME_MIN
           powercfg -hibernate off
 
@@ -61,13 +61,14 @@ jobs:
             }
           }
 
-          # Enable Audio Service
+          # Enable audio service
           try {
-            Set-Service -Name 'Audiosrv' -StartupType Automatic
-            Start-Service -Name 'Audiosrv'
+            Set-Service -Name 'Audiosrv' -StartupType Automatic -ErrorAction SilentlyContinue
+            Start-Service -Name 'Audiosrv' -ErrorAction SilentlyContinue
+            Write-Host "Audio service enabled"
           }
           catch {
-            Write-Host "Audio service already active"
+            Write-Host "Audio service skipped"
           }
 
           # Improve UI responsiveness
@@ -91,21 +92,22 @@ jobs:
             -Name 'fDenyTSConnections' `
             -Value 0
 
-          # Enable Network Level Authentication (MORE SECURE)
+          # Enable Network Level Authentication
           Set-ItemProperty `
             -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
             -Name 'UserAuthentication' `
             -Value 1
 
-          # TLS Security Layer
+          # Use TLS security layer
           Set-ItemProperty `
             -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
             -Name 'SecurityLayer' `
             -Value 2
 
-          # Firewall Rule
+          # Clean old firewall rule if exists
           netsh advfirewall firewall delete rule name='RDP-Tailscale' | Out-Null
 
+          # Add RDP firewall rule
           netsh advfirewall firewall add rule `
             name='RDP-Tailscale' `
             dir=in `
@@ -113,8 +115,10 @@ jobs:
             protocol=TCP `
             localport=3389 | Out-Null
 
-          Enable-NetFirewallRule -DisplayGroup 'Remote Desktop'
+          # Enable default Remote Desktop firewall group
+          Enable-NetFirewallRule -DisplayGroup 'Remote Desktop' -ErrorAction SilentlyContinue
 
+          # Restart RDP service
           Restart-Service -Name TermService -Force
 
           Write-Host "RDP configured securely ✅"
@@ -124,9 +128,52 @@ jobs:
         run: |
           Write-Host "Generating secure password..."
 
-          Add-Type -AssemblyName System.Web
-          $password = [System.Web.Security.Membership]::GeneratePassword(24,6)
+          # Secure password generator compatible with GitHub Actions Windows runner
+          function Get-SecureRandomChar {
+            param(
+              [string]$Characters
+            )
 
+            $index = [System.Security.Cryptography.RandomNumberGenerator]::GetInt32(0, $Characters.Length)
+            return $Characters[$index]
+          }
+
+          function New-SecurePassword {
+            param(
+              [int]$Length = 24
+            )
+
+            $upper   = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+            $lower   = 'abcdefghijklmnopqrstuvwxyz'
+            $numbers = '0123456789'
+            $special = '!@#$%^&*()-_=+[]{}:,.?'
+            $all     = $upper + $lower + $numbers + $special
+
+            $passwordChars = New-Object System.Collections.Generic.List[char]
+
+            # Ensure password complexity
+            $passwordChars.Add((Get-SecureRandomChar -Characters $upper))
+            $passwordChars.Add((Get-SecureRandomChar -Characters $lower))
+            $passwordChars.Add((Get-SecureRandomChar -Characters $numbers))
+            $passwordChars.Add((Get-SecureRandomChar -Characters $special))
+
+            while ($passwordChars.Count -lt $Length) {
+              $passwordChars.Add((Get-SecureRandomChar -Characters $all))
+            }
+
+            # Secure shuffle
+            for ($i = $passwordChars.Count - 1; $i -gt 0; $i--) {
+              $j = [System.Security.Cryptography.RandomNumberGenerator]::GetInt32(0, $i + 1)
+
+              $temp = $passwordChars[$i]
+              $passwordChars[$i] = $passwordChars[$j]
+              $passwordChars[$j] = $temp
+            }
+
+            return -join $passwordChars
+          }
+
+          $password = New-SecurePassword -Length 24
           $securePass = ConvertTo-SecureString $password -AsPlainText -Force
 
           # Remove old user if exists
@@ -134,6 +181,7 @@ jobs:
             Remove-LocalUser -Name $env:RDP_USER
           }
 
+          # Create local RDP user
           New-LocalUser `
             -Name $env:RDP_USER `
             -Password $securePass `
@@ -144,13 +192,20 @@ jobs:
           Add-LocalGroupMember -Group 'Administrators' -Member $env:RDP_USER
           Add-LocalGroupMember -Group 'Remote Desktop Users' -Member $env:RDP_USER
 
-          echo "RDP_PASS=$password" >> $env:GITHUB_ENV
+          "RDP_PASS=$password" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
           Write-Host "Secure user created successfully ✅"
 
       - name: 🐾 Install Tailscale
         shell: pwsh
         run: |
+          Write-Host "Checking Tailscale auth key..."
+
+          if ([string]::IsNullOrWhiteSpace("${{ secrets.TAILSCALE_AUTH_KEY }}")) {
+            Write-Error "Secret TAILSCALE_AUTH_KEY belum diset di GitHub repository secrets!"
+            exit 1
+          }
+
           Write-Host "Downloading latest Tailscale installer..."
 
           $installerPath = "$env:TEMP\tailscale.msi"
@@ -168,7 +223,7 @@ jobs:
           $tsExe = "$env:ProgramFiles\Tailscale\tailscale.exe"
 
           if (-not (Test-Path $tsExe)) {
-            Write-Error 'Tailscale installation failed!'
+            Write-Error "Tailscale installation failed!"
             exit 1
           }
 
@@ -188,16 +243,23 @@ jobs:
         shell: pwsh
         run: |
           $tsExe = "$env:ProgramFiles\Tailscale\tailscale.exe"
-          $tsIP = (& $tsExe ip -4).Trim()
 
-          if (-not $tsIP) {
-            Write-Error 'Failed to obtain Tailscale IP!'
+          if (-not (Test-Path $tsExe)) {
+            Write-Error "Tailscale executable not found!"
             exit 1
           }
 
-          echo "TAILSCALE_IP=$tsIP" >> $env:GITHUB_ENV
+          $tsIP = (& $tsExe ip -4).Trim()
+
+          if (-not $tsIP) {
+            Write-Error "Failed to obtain Tailscale IP!"
+            exit 1
+          }
+
+          "TAILSCALE_IP=$tsIP" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
           Write-Host "Testing RDP port accessibility..."
+          Write-Host "Tailscale IP: $tsIP"
 
           $test = Test-NetConnection `
             -ComputerName $tsIP `
@@ -205,7 +267,7 @@ jobs:
             -WarningAction SilentlyContinue
 
           if (-not $test.TcpTestSucceeded) {
-            Write-Error 'RDP port test failed!'
+            Write-Error "RDP port test failed!"
             exit 1
           }
 
@@ -229,37 +291,36 @@ jobs:
 
           ### 📌 Important Notes
 
-          - Connect using Microsoft Remote Desktop Client
-          - Keep the GitHub Actions workflow running
-          - Do not terminate the PowerShell process
-          - Session ends automatically after selected duration
-          - Access only available through Tailscale VPN
+          - Connect using Microsoft Remote Desktop Client.
+          - Make sure your device is connected to the same Tailscale network.
+          - Keep the GitHub Actions workflow running.
+          - Session ends automatically after selected duration.
+          - Access is only available through Tailscale VPN.
 
           "@
 
-          $summary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+          $summary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
 
       - name: ⏳ Keep Session Alive
         shell: pwsh
         run: |
-          Write-Host '========================================='
-          Write-Host '        WINDOWS RDP SESSION ACTIVE       '
-          Write-Host '========================================='
+          Write-Host "========================================="
+          Write-Host "        WINDOWS RDP SESSION ACTIVE       "
+          Write-Host "========================================="
           Write-Host "OS       : ${{ inputs.windows_version }}"
           Write-Host "IP       : $env:TAILSCALE_IP"
           Write-Host "Username : $env:RDP_USER"
           Write-Host "Password : $env:RDP_PASS"
-          Write-Host '========================================='
+          Write-Host "========================================="
 
           $hours = [int]'${{ inputs.duration_hours }}'
           $seconds = $hours * 3600
 
           Write-Host "Maintaining session for $hours hour(s)..."
 
-          # Lightweight keep-alive loop
-          for ($i = 0; $i -lt $seconds; $i += 60) {
+          for ($elapsed = 0; $elapsed -lt $seconds; $elapsed += 60) {
             Start-Sleep -Seconds 60
-            Write-Host "Session active... elapsed: $i seconds"
+            Write-Host "Session active... elapsed: $elapsed seconds"
           }
 
-          Write-Host 'Session completed.'
+          Write-Host "Session completed."
