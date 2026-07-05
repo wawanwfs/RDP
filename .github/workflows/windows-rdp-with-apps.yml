@@ -1,39 +1,39 @@
-name: 🪟 Windows RDP with Apps
+name: 🪟 Windows RDP withs Apps
 
 on:
   workflow_dispatch:
     inputs:
       windows_version:
-        description: "Pilih Versi Windows (OS)"
+        description: 'Pilih Versi Windows (OS)'
         required: true
-        default: "windows-2025"
+        default: 'windows-2025'
         type: choice
         options:
           # Recommended stable Windows x64 runners
-          - "windows-latest"
-          - "windows-2025"
-          - "windows-2022"
+          - 'windows-latest'
+          - 'windows-2025'
+          - 'windows-2022'
 
           # Windows ARM64 runner
-          - "windows-11-arm"
+          - 'windows-11-arm'
 
           # Public repository only / Visual Studio 2026 image
           # Jika repo private gagal, gunakan windows-2025 atau windows-2022
-          - "windows-2025-vs2026"
+          - 'windows-2025-vs2026'
 
       duration_hours:
-        description: "Durasi RDP Aktif (Jam)"
+        description: 'Durasi RDP Aktif (Jam)'
         required: true
-        default: "6"
+        default: '6'
         type: choice
         options:
-          - "1"
-          - "3"
-          - "6"
+          - '1'
+          - '3'
+          - '6'
 
 jobs:
   secure-rdp:
-    name: 🖥️ Windows Remote Desktop with Apps
+    name: 🖥️ Windows Remote Desktop
     runs-on: ${{ inputs.windows_version }}
     timeout-minutes: 360
 
@@ -278,49 +278,139 @@ jobs:
 
           # Register a one-time user-context install for RDP as a safety net.
           # Microsoft Store/MSIX apps can be user-scoped, so this makes sure Codex is also available after logging in as RDP.
+          # Unlike Antigravity IDE, Codex is a packaged Microsoft Store app, so copying AppData is not enough.
+          # The launcher below installs/registers Codex in the active RDP user context and then opens it through AppsFolder/AppUserModelID.
           $codexSetupDir = Join-Path $env:ProgramData "RDP-Setup"
           New-Item -ItemType Directory -Path $codexSetupDir -Force | Out-Null
           $codexSetupScript = Join-Path $codexSetupDir "install-codex-gui-for-rdp.ps1"
+          $codexLauncherScript = Join-Path $codexSetupDir "launch-codex-gui.ps1"
 
           @'
           $ErrorActionPreference = "Continue"
 
-          $winget = (Get-Command winget.exe -ErrorAction SilentlyContinue).Source
+          function Resolve-WingetExe {
+            $winget = (Get-Command winget.exe -ErrorAction SilentlyContinue).Source
 
-          if (-not $winget) {
-            $wingetCandidates = @(
-              "$env:LOCALAPPDATA\Microsoft\WindowsApps\winget.exe"
-            )
+            if (-not $winget) {
+              $wingetCandidates = @(
+                "$env:LOCALAPPDATA\Microsoft\WindowsApps\winget.exe"
+              )
 
-            $wingetCandidates += Get-ChildItem `
-              -Path "$env:ProgramFiles\WindowsApps" `
-              -Filter "winget.exe" `
-              -Recurse `
-              -ErrorAction SilentlyContinue |
-              Select-Object -ExpandProperty FullName
+              $wingetCandidates += Get-ChildItem `
+                -Path "$env:ProgramFiles\WindowsApps" `
+                -Filter "winget.exe" `
+                -Recurse `
+                -ErrorAction SilentlyContinue |
+                Select-Object -ExpandProperty FullName
 
-            $winget = $wingetCandidates |
-              Where-Object { $_ -and (Test-Path $_) } |
+              $winget = $wingetCandidates |
+                Where-Object { $_ -and (Test-Path $_) } |
+                Select-Object -First 1
+            }
+
+            return $winget
+          }
+
+          function Resolve-CodexStartApp {
+            Get-StartApps -ErrorAction SilentlyContinue |
+              Where-Object {
+                $_.Name -like "*Codex*" -or
+                $_.AppID -like "*Codex*" -or
+                $_.Name -like "*OpenAI*" -or
+                $_.AppID -like "*OpenAI*"
+              } |
               Select-Object -First 1
           }
 
-          if ($winget) {
-            $codexStartApp = Get-StartApps -ErrorAction SilentlyContinue |
-              Where-Object { $_.Name -like "*Codex*" -or $_.AppID -like "*Codex*" } |
-              Select-Object -First 1
+          $codexStartApp = Resolve-CodexStartApp
 
-            if (-not $codexStartApp) {
+          if (-not $codexStartApp) {
+            $winget = Resolve-WingetExe
+
+            if ($winget) {
+              & $winget source update --disable-interactivity
               & $winget install `
                 --id 9PLM9XGG6VKS `
                 --source msstore `
                 --accept-package-agreements `
                 --accept-source-agreements `
                 --disable-interactivity
+            } else {
+              Write-Host "winget.exe not found, so Codex GUI could not be installed for this user."
             }
           }
 
           Unregister-ScheduledTask -TaskName "Install Codex GUI for RDP" -Confirm:$false -ErrorAction SilentlyContinue
           '@ | Set-Content -Path $codexSetupScript -Encoding UTF8
+
+          @'
+          $ErrorActionPreference = "Continue"
+
+          function Resolve-WingetExe {
+            $winget = (Get-Command winget.exe -ErrorAction SilentlyContinue).Source
+
+            if (-not $winget) {
+              $wingetCandidates = @(
+                "$env:LOCALAPPDATA\Microsoft\WindowsApps\winget.exe"
+              )
+
+              $wingetCandidates += Get-ChildItem `
+                -Path "$env:ProgramFiles\WindowsApps" `
+                -Filter "winget.exe" `
+                -Recurse `
+                -ErrorAction SilentlyContinue |
+                Select-Object -ExpandProperty FullName
+
+              $winget = $wingetCandidates |
+                Where-Object { $_ -and (Test-Path $_) } |
+                Select-Object -First 1
+            }
+
+            return $winget
+          }
+
+          function Resolve-CodexStartApp {
+            Get-StartApps -ErrorAction SilentlyContinue |
+              Where-Object {
+                $_.Name -like "*Codex*" -or
+                $_.AppID -like "*Codex*" -or
+                $_.Name -like "*OpenAI*" -or
+                $_.AppID -like "*OpenAI*"
+              } |
+              Select-Object -First 1
+          }
+
+          $codexStartApp = Resolve-CodexStartApp
+
+          if (-not $codexStartApp) {
+            Write-Host "Codex GUI is not registered for user $env:USERNAME yet. Installing/registering now..."
+            $winget = Resolve-WingetExe
+
+            if ($winget) {
+              & $winget source update --disable-interactivity
+              & $winget install `
+                --id 9PLM9XGG6VKS `
+                --source msstore `
+                --accept-package-agreements `
+                --accept-source-agreements `
+                --disable-interactivity
+            } else {
+              Write-Host "winget.exe not found. Cannot install Codex GUI for user $env:USERNAME."
+            }
+
+            for ($i = 0; $i -lt 12 -and -not $codexStartApp; $i++) {
+              Start-Sleep -Seconds 5
+              $codexStartApp = Resolve-CodexStartApp
+            }
+          }
+
+          if ($codexStartApp) {
+            Start-Process -FilePath "explorer.exe" -ArgumentList "shell:AppsFolder\$($codexStartApp.AppID)"
+          } else {
+            Write-Host "Codex GUI Start App ID was not found for user $env:USERNAME. Try opening Microsoft Store once, then run this shortcut again."
+            exit 1
+          }
+          '@ | Set-Content -Path $codexLauncherScript -Encoding UTF8
 
           try {
             $action = New-ScheduledTaskAction `
@@ -339,6 +429,7 @@ jobs:
               -Force | Out-Null
 
             Write-Host "✅ One-time Codex GUI install task registered for $env:RDP_USER"
+            Write-Host "✅ Codex GUI launcher prepared: $codexLauncherScript"
           } catch {
             Write-Warning "Could not register RDP Codex GUI install task: $($_.Exception.Message)"
           }
@@ -396,6 +487,7 @@ jobs:
           Write-Host "✅ Chrome extensions policy configured"
           Write-Host "   - Cookie-Editor"
           Write-Host "   - GoFullPage"
+
 
       - name: 🧬 Prepare Antigravity IDE for RDP User
         shell: pwsh
@@ -565,6 +657,7 @@ jobs:
 
           Write-Host "✅ Antigravity IDE RDP preparation completed"
 
+
       - name: 🧷 Publish App Shortcuts for RDP User
         shell: pwsh
         run: |
@@ -662,6 +755,7 @@ jobs:
           $runnerLocalPrograms = Join-Path $env:LOCALAPPDATA "Programs"
           $runnerRoamingNpm = Join-Path $env:APPDATA "npm"
           $antigravityLauncher = Join-Path $env:ProgramData "RDP-Setup\launch-antigravity-ide.ps1"
+          $codexLauncher = Join-Path $env:ProgramData "RDP-Setup\launch-codex-gui.ps1"
 
           $chromeTarget = Resolve-AppTarget `
             -CandidatePaths @(
@@ -759,10 +853,12 @@ jobs:
             New-AppShortcut -Name "Node.js Command Prompt" -TargetPath "$env:SystemRoot\System32\cmd.exe" -Arguments "/k `"$nodeTarget`" --version"
           }
 
-          if ($codexAppId) {
+          if (Test-Path $codexLauncher) {
+            New-AppShortcut -Name "Codex" -TargetPath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Arguments "-NoProfile -ExecutionPolicy Bypass -File `"$codexLauncher`"" -IconLocation "$env:SystemRoot\System32\shell32.dll,220"
+          } elseif ($codexAppId) {
             New-AppShortcut -Name "Codex" -TargetPath "$env:SystemRoot\explorer.exe" -Arguments "shell:AppsFolder\$codexAppId" -IconLocation "$env:SystemRoot\System32\shell32.dll,220"
           } else {
-            Write-Warning "Codex GUI Start App ID belum ditemukan. Biasanya akan muncul setelah user RDP login dan task install Codex GUI berjalan."
+            Write-Warning "Codex GUI Start App ID belum ditemukan dan launcher Codex tidak tersedia. Pastikan step install Codex GUI berhasil."
           }
 
           if ($nineRouterTarget) {
@@ -833,7 +929,7 @@ jobs:
           }
 
           Write-Host "✅ Tailscale installed successfully"
-
+          
       - name: 🌐 Connect Tailscale
         shell: pwsh
         run: |
