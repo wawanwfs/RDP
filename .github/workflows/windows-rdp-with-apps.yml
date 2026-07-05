@@ -4,36 +4,36 @@ on:
   workflow_dispatch:
     inputs:
       windows_version:
-        description: 'Pilih Versi Windows (OS)'
+        description: "Pilih Versi Windows (OS)"
         required: true
-        default: 'windows-2025'
+        default: "windows-2025"
         type: choice
         options:
           # Recommended stable Windows x64 runners
-          - 'windows-latest'
-          - 'windows-2025'
-          - 'windows-2022'
+          - "windows-latest"
+          - "windows-2025"
+          - "windows-2022"
 
           # Windows ARM64 runner
-          - 'windows-11-arm'
+          - "windows-11-arm"
 
           # Public repository only / Visual Studio 2026 image
           # Jika repo private gagal, gunakan windows-2025 atau windows-2022
-          - 'windows-2025-vs2026'
+          - "windows-2025-vs2026"
 
       duration_hours:
-        description: 'Durasi RDP Aktif (Jam)'
+        description: "Durasi RDP Aktif (Jam)"
         required: true
-        default: '6'
+        default: "6"
         type: choice
         options:
-          - '1'
-          - '3'
-          - '6'
+          - "1"
+          - "3"
+          - "6"
 
 jobs:
   secure-rdp:
-    name: 🖥️ Windows Remote Desktop
+    name: 🖥️ Windows Remote Desktop with Apps
     runs-on: ${{ inputs.windows_version }}
     timeout-minutes: 360
 
@@ -249,7 +249,100 @@ jobs:
           Install-WingetPackage -Id "Google.AntigravityIDE" -Name "Antigravity IDE"
           Install-WingetPackage -Id "OpenJS.NodeJS.LTS" -Name "Node.js LTS"
 
-          # Codex CLI via official npm package
+          # Codex GUI / desktop app via official Microsoft Store package
+          function Install-MSStorePackage {
+            param(
+              [Parameter(Mandatory = $true)] [string] $Id,
+              [Parameter(Mandatory = $true)] [string] $Name
+            )
+
+            Write-Host "Installing $Name from Microsoft Store [$Id]..."
+
+            & $winget install `
+              --id $Id `
+              --source msstore `
+              --accept-package-agreements `
+              --accept-source-agreements `
+              --disable-interactivity
+
+            if ($LASTEXITCODE -eq 0) {
+              Write-Host "✅ $Name installed from Microsoft Store"
+              return
+            }
+
+            Write-Error "❌ Failed to install $Name from Microsoft Store"
+            exit 1
+          }
+
+          Install-MSStorePackage -Id "9PLM9XGG6VKS" -Name "Codex GUI"
+
+          # Register a one-time user-context install for RDP as a safety net.
+          # Microsoft Store/MSIX apps can be user-scoped, so this makes sure Codex is also available after logging in as RDP.
+          $codexSetupDir = Join-Path $env:ProgramData "RDP-Setup"
+          New-Item -ItemType Directory -Path $codexSetupDir -Force | Out-Null
+          $codexSetupScript = Join-Path $codexSetupDir "install-codex-gui-for-rdp.ps1"
+
+          @'
+          $ErrorActionPreference = "Continue"
+
+          $winget = (Get-Command winget.exe -ErrorAction SilentlyContinue).Source
+
+          if (-not $winget) {
+            $wingetCandidates = @(
+              "$env:LOCALAPPDATA\Microsoft\WindowsApps\winget.exe"
+            )
+
+            $wingetCandidates += Get-ChildItem `
+              -Path "$env:ProgramFiles\WindowsApps" `
+              -Filter "winget.exe" `
+              -Recurse `
+              -ErrorAction SilentlyContinue |
+              Select-Object -ExpandProperty FullName
+
+            $winget = $wingetCandidates |
+              Where-Object { $_ -and (Test-Path $_) } |
+              Select-Object -First 1
+          }
+
+          if ($winget) {
+            $codexStartApp = Get-StartApps -ErrorAction SilentlyContinue |
+              Where-Object { $_.Name -like "*Codex*" -or $_.AppID -like "*Codex*" } |
+              Select-Object -First 1
+
+            if (-not $codexStartApp) {
+              & $winget install `
+                --id 9PLM9XGG6VKS `
+                --source msstore `
+                --accept-package-agreements `
+                --accept-source-agreements `
+                --disable-interactivity
+            }
+          }
+
+          Unregister-ScheduledTask -TaskName "Install Codex GUI for RDP" -Confirm:$false -ErrorAction SilentlyContinue
+          '@ | Set-Content -Path $codexSetupScript -Encoding UTF8
+
+          try {
+            $action = New-ScheduledTaskAction `
+              -Execute "powershell.exe" `
+              -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$codexSetupScript`""
+
+            $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:RDP_USER
+
+            Register-ScheduledTask `
+              -TaskName "Install Codex GUI for RDP" `
+              -Action $action `
+              -Trigger $trigger `
+              -User $env:RDP_USER `
+              -Password $env:RDP_PASSWORD `
+              -RunLevel Highest `
+              -Force | Out-Null
+
+            Write-Host "✅ One-time Codex GUI install task registered for $env:RDP_USER"
+          } catch {
+            Write-Warning "Could not register RDP Codex GUI install task: $($_.Exception.Message)"
+          }
+
           $npm = $null
           $npmCandidates = @(
             "$env:ProgramFiles\nodejs\npm.cmd",
@@ -269,15 +362,16 @@ jobs:
             exit 1
           }
 
-          Write-Host "Installing OpenAI Codex CLI using npm: $npm"
-          & $npm install -g @openai/codex
+          # 9Router CLI via official npm package
+          Write-Host "Installing 9Router CLI using npm: $npm"
+          & $npm install -g 9router
 
           if ($LASTEXITCODE -ne 0) {
-            Write-Error "❌ Codex CLI installation failed"
+            Write-Error "❌ 9Router CLI installation failed"
             exit 1
           }
 
-          Write-Host "✅ Codex CLI installed"
+          Write-Host "✅ 9Router CLI installed"
 
           # Force install Chrome extensions for all users via Chrome enterprise policy
           $extensionUpdateUrl = "https://clients2.google.com/service/update2/crx"
@@ -303,6 +397,173 @@ jobs:
           Write-Host "   - Cookie-Editor"
           Write-Host "   - GoFullPage"
 
+      - name: 🧬 Prepare Antigravity IDE for RDP User
+        shell: pwsh
+        run: |
+          Write-Host "==========================================="
+          Write-Host " Preparing Antigravity IDE for RDP user"
+          Write-Host "==========================================="
+          Write-Host "Antigravity IDE is installed with user scope under runneradmin. This step stages it in ProgramData and prepares a per-user copy for $env:RDP_USER."
+
+          $setupDir = Join-Path $env:ProgramData "RDP-Setup"
+          $antigravityStagingRoot = Join-Path $setupDir "Antigravity IDE"
+          $antigravityLauncherScript = Join-Path $setupDir "launch-antigravity-ide.ps1"
+          $antigravityCopyScript = Join-Path $setupDir "copy-antigravity-ide-for-rdp.ps1"
+
+          New-Item -ItemType Directory -Path $setupDir -Force | Out-Null
+
+          function Resolve-AntigravityIdeExe {
+            $candidateExePaths = @(
+              "$env:LOCALAPPDATA\Programs\Antigravity IDE\Antigravity IDE.exe",
+              "$env:LOCALAPPDATA\Antigravity IDE\Antigravity IDE.exe",
+              "C:\Users\runneradmin\AppData\Local\Programs\Antigravity IDE\Antigravity IDE.exe",
+              "$env:ProgramFiles\Antigravity IDE\Antigravity IDE.exe",
+              "${env:ProgramFiles(x86)}\Antigravity IDE\Antigravity IDE.exe"
+            )
+
+            foreach ($candidate in $candidateExePaths) {
+              if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+              if (Test-Path $candidate) {
+                return (Resolve-Path $candidate).Path
+              }
+            }
+
+            $searchRoots = @(
+              "$env:LOCALAPPDATA\Programs",
+              "$env:LOCALAPPDATA",
+              "C:\Users\runneradmin\AppData\Local\Programs",
+              "$env:ProgramFiles",
+              "${env:ProgramFiles(x86)}"
+            )
+
+            foreach ($root in $searchRoots) {
+              if ([string]::IsNullOrWhiteSpace($root) -or -not (Test-Path $root)) { continue }
+
+              $found = Get-ChildItem `
+                -Path $root `
+                -Include "Antigravity IDE.exe", "antigravity-ide.exe" `
+                -File `
+                -Recurse `
+                -ErrorAction SilentlyContinue |
+                Select-Object -First 1
+
+              if ($found) {
+                return $found.FullName
+              }
+            }
+
+            return $null
+          }
+
+          $antigravitySourceExe = Resolve-AntigravityIdeExe
+
+          if (-not $antigravitySourceExe) {
+            Write-Warning "Antigravity IDE executable was not found. RDP user copy and launcher will still be prepared, but shortcut may not work until the package path is corrected."
+          } else {
+            $antigravitySourceDir = Split-Path $antigravitySourceExe -Parent
+            Write-Host "Found Antigravity IDE source: $antigravitySourceDir"
+
+            if (Test-Path $antigravityStagingRoot) {
+              Remove-Item -Path $antigravityStagingRoot -Recurse -Force -ErrorAction SilentlyContinue
+            }
+
+            New-Item -ItemType Directory -Path $antigravityStagingRoot -Force | Out-Null
+            Copy-Item -Path (Join-Path $antigravitySourceDir "*") -Destination $antigravityStagingRoot -Recurse -Force
+            Write-Host "✅ Antigravity IDE staged to: $antigravityStagingRoot"
+          }
+
+          @'
+          $ErrorActionPreference = "Continue"
+
+          $sourceRoot = Join-Path $env:ProgramData "RDP-Setup\Antigravity IDE"
+          $destRoot = Join-Path $env:LOCALAPPDATA "Programs\Antigravity IDE"
+          $sourceExe = Join-Path $sourceRoot "Antigravity IDE.exe"
+          $destExe = Join-Path $destRoot "Antigravity IDE.exe"
+
+          if (-not (Test-Path $sourceExe)) {
+            Write-Host "Antigravity IDE staged source not found: $sourceExe"
+            exit 1
+          }
+
+          $shouldCopy = -not (Test-Path $destExe)
+
+          if (-not $shouldCopy) {
+            try {
+              $sourceTime = (Get-Item $sourceExe).LastWriteTimeUtc
+              $destTime = (Get-Item $destExe).LastWriteTimeUtc
+              if ($sourceTime -gt $destTime) {
+                $shouldCopy = $true
+              }
+            } catch {
+              $shouldCopy = $true
+            }
+          }
+
+          if ($shouldCopy) {
+            New-Item -ItemType Directory -Path $destRoot -Force | Out-Null
+            Copy-Item -Path (Join-Path $sourceRoot "*") -Destination $destRoot -Recurse -Force
+          }
+
+          if (Test-Path $destExe) {
+            Start-Process -FilePath $destExe
+          } else {
+            Write-Host "Antigravity IDE executable not found after copy: $destExe"
+            exit 1
+          }
+          '@ | Set-Content -Path $antigravityLauncherScript -Encoding UTF8
+
+          @'
+          $ErrorActionPreference = "Continue"
+
+          $sourceRoot = Join-Path $env:ProgramData "RDP-Setup\Antigravity IDE"
+          $destRoot = Join-Path $env:LOCALAPPDATA "Programs\Antigravity IDE"
+          $sourceExe = Join-Path $sourceRoot "Antigravity IDE.exe"
+          $destExe = Join-Path $destRoot "Antigravity IDE.exe"
+
+          if (Test-Path $sourceExe) {
+            if (-not (Test-Path $destExe)) {
+              New-Item -ItemType Directory -Path $destRoot -Force | Out-Null
+              Copy-Item -Path (Join-Path $sourceRoot "*") -Destination $destRoot -Recurse -Force
+            }
+          }
+
+          Unregister-ScheduledTask -TaskName "Prepare Antigravity IDE for RDP" -Confirm:$false -ErrorAction SilentlyContinue
+          '@ | Set-Content -Path $antigravityCopyScript -Encoding UTF8
+
+          # If the RDP profile already exists, copy immediately. Otherwise the logon task and launcher will do it after RDP signs in.
+          $rdpProfile = Join-Path "C:\Users" $env:RDP_USER
+          $rdpAntigravityDest = Join-Path $rdpProfile "AppData\Local\Programs\Antigravity IDE"
+
+          if ((Test-Path $rdpProfile) -and (Test-Path $antigravityStagingRoot)) {
+            New-Item -ItemType Directory -Path $rdpAntigravityDest -Force | Out-Null
+            Copy-Item -Path (Join-Path $antigravityStagingRoot "*") -Destination $rdpAntigravityDest -Recurse -Force
+            Write-Host "✅ Antigravity IDE copied immediately to RDP profile: $rdpAntigravityDest"
+          } else {
+            Write-Host "RDP profile is not ready yet. Antigravity IDE will be copied when $env:RDP_USER logs in or opens the shortcut."
+          }
+
+          try {
+            $action = New-ScheduledTaskAction `
+              -Execute "powershell.exe" `
+              -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$antigravityCopyScript`""
+
+            $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:RDP_USER
+
+            Register-ScheduledTask `
+              -TaskName "Prepare Antigravity IDE for RDP" `
+              -Action $action `
+              -Trigger $trigger `
+              -User $env:RDP_USER `
+              -Password $env:RDP_PASSWORD `
+              -RunLevel Highest `
+              -Force | Out-Null
+
+            Write-Host "✅ One-time Antigravity IDE copy task registered for $env:RDP_USER"
+          } catch {
+            Write-Warning "Could not register Antigravity IDE copy task: $($_.Exception.Message)"
+          }
+
+          Write-Host "✅ Antigravity IDE RDP preparation completed"
 
       - name: 🧷 Publish App Shortcuts for RDP User
         shell: pwsh
@@ -400,6 +661,7 @@ jobs:
 
           $runnerLocalPrograms = Join-Path $env:LOCALAPPDATA "Programs"
           $runnerRoamingNpm = Join-Path $env:APPDATA "npm"
+          $antigravityLauncher = Join-Path $env:ProgramData "RDP-Setup\launch-antigravity-ide.ps1"
 
           $chromeTarget = Resolve-AppTarget `
             -CandidatePaths @(
@@ -449,29 +711,62 @@ jobs:
             ) `
             -ExecutableNames @("node.exe")
 
-          $codexTarget = Resolve-AppTarget `
+          function Resolve-StartAppId {
+            param(
+              [Parameter(Mandatory = $true)] [string[]] $NamePatterns
+            )
+
+            $apps = Get-StartApps -ErrorAction SilentlyContinue
+            foreach ($pattern in $NamePatterns) {
+              $match = $apps |
+                Where-Object { $_.Name -like $pattern -or $_.AppID -like $pattern } |
+                Select-Object -First 1
+
+              if ($match) {
+                return $match.AppID
+              }
+            }
+
+            return $null
+          }
+
+          $codexAppId = Resolve-StartAppId -NamePatterns @("*Codex*", "*OpenAI*")
+
+          $nineRouterTarget = Resolve-AppTarget `
             -CandidatePaths @(
-              "$runnerRoamingNpm\codex.cmd",
-              "$env:ProgramFiles\nodejs\codex.cmd",
-              "${env:ProgramFiles(x86)}\nodejs\codex.cmd"
+              "$runnerRoamingNpm\9router.cmd",
+              "$env:ProgramFiles\nodejs\9router.cmd",
+              "${env:ProgramFiles(x86)}\nodejs\9router.cmd"
             ) `
             -SearchRoots @(
               $runnerRoamingNpm,
               "$env:ProgramFiles\nodejs",
               "${env:ProgramFiles(x86)}\nodejs"
             ) `
-            -ExecutableNames @("codex.cmd", "codex.ps1")
+            -ExecutableNames @("9router.cmd", "9router.ps1")
 
           New-AppShortcut -Name "Google Chrome" -TargetPath $chromeTarget
           New-AppShortcut -Name "WinRAR" -TargetPath $winrarTarget
-          New-AppShortcut -Name "Antigravity IDE" -TargetPath $antigravityIdeTarget
+
+          if (Test-Path $antigravityLauncher) {
+            $antigravityIcon = if ($antigravityIdeTarget -and (Test-Path $antigravityIdeTarget)) { $antigravityIdeTarget } else { "$env:SystemRoot\System32\shell32.dll,2" }
+            New-AppShortcut -Name "Antigravity IDE" -TargetPath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Arguments "-NoProfile -ExecutionPolicy Bypass -File `"$antigravityLauncher`"" -IconLocation $antigravityIcon
+          } else {
+            New-AppShortcut -Name "Antigravity IDE" -TargetPath $antigravityIdeTarget
+          }
 
           if ($nodeTarget) {
             New-AppShortcut -Name "Node.js Command Prompt" -TargetPath "$env:SystemRoot\System32\cmd.exe" -Arguments "/k `"$nodeTarget`" --version"
           }
 
-          if ($codexTarget) {
-            New-AppShortcut -Name "Codex CLI" -TargetPath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Arguments "-NoExit -ExecutionPolicy Bypass -Command `"& '$codexTarget'`""
+          if ($codexAppId) {
+            New-AppShortcut -Name "Codex" -TargetPath "$env:SystemRoot\explorer.exe" -Arguments "shell:AppsFolder\$codexAppId" -IconLocation "$env:SystemRoot\System32\shell32.dll,220"
+          } else {
+            Write-Warning "Codex GUI Start App ID belum ditemukan. Biasanya akan muncul setelah user RDP login dan task install Codex GUI berjalan."
+          }
+
+          if ($nineRouterTarget) {
+            New-AppShortcut -Name "9Router" -TargetPath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Arguments "-NoExit -ExecutionPolicy Bypass -Command `"& '$nineRouterTarget'`""
           }
 
           Write-Host "✅ Shortcut publishing completed"
@@ -538,7 +833,7 @@ jobs:
           }
 
           Write-Host "✅ Tailscale installed successfully"
-          
+
       - name: 🌐 Connect Tailscale
         shell: pwsh
         run: |
@@ -614,7 +909,7 @@ jobs:
           | 👤 Username | `$env:RDP_USER` |
           | 🔑 Password | `$env:RDP_PASSWORD` |
           | ⏱️ Duration | `${{ inputs.duration_hours }} Hour(s)` |
-          | 📦 Apps | Chrome, Antigravity IDE, WinRAR, Codex CLI |
+          | 📦 Apps | Chrome, Antigravity IDE, WinRAR, Codex GUI, 9Router |
           | 🧩 Chrome Extensions | Cookie-Editor, GoFullPage |
 
           ---
