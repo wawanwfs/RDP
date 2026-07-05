@@ -246,14 +246,14 @@ jobs:
           # Apps
           Install-WingetPackage -Id "Google.Chrome" -Name "Google Chrome"
           Install-WingetPackage -Id "RARLab.WinRAR" -Name "WinRAR"
-          Install-WingetPackage -Id "Google.Antigravity" -Name "Antigravity IDE" -FallbackIds @("Google.AntigravityIDE")
+          Install-WingetPackage -Id "Google.AntigravityIDE" -Name "Antigravity IDE"
           Install-WingetPackage -Id "OpenJS.NodeJS.LTS" -Name "Node.js LTS"
 
           # Codex CLI via official npm package
           $npm = $null
           $npmCandidates = @(
             "$env:ProgramFiles\nodejs\npm.cmd",
-            "$env:ProgramFiles(x86)\nodejs\npm.cmd"
+            "${env:ProgramFiles(x86)}\nodejs\npm.cmd"
           )
 
           $npm = $npmCandidates |
@@ -302,6 +302,179 @@ jobs:
           Write-Host "✅ Chrome extensions policy configured"
           Write-Host "   - Cookie-Editor"
           Write-Host "   - GoFullPage"
+
+
+      - name: 🧷 Publish App Shortcuts for RDP User
+        shell: pwsh
+        run: |
+          Write-Host "==========================================="
+          Write-Host " Publishing installed apps to RDP user UI"
+          Write-Host "==========================================="
+          Write-Host "Apps may be installed under runneradmin/user scope. Shortcuts below are published through Public Desktop and the common Start Menu so they appear when logging in as $env:RDP_USER."
+
+          $publicDesktop = Join-Path $env:PUBLIC "Desktop"
+          $commonStartMenu = Join-Path $env:ProgramData "Microsoft\Windows\Start Menu\Programs"
+          $shortcutDirectories = @($publicDesktop, $commonStartMenu)
+
+          $rdpProfile = Join-Path "C:\Users" $env:RDP_USER
+          if (Test-Path $rdpProfile) {
+            $shortcutDirectories += Join-Path $rdpProfile "Desktop"
+            $shortcutDirectories += Join-Path $rdpProfile "AppData\Roaming\Microsoft\Windows\Start Menu\Programs"
+          }
+
+          $shortcutDirectories = $shortcutDirectories |
+            Where-Object { $_ -and $_.Trim() } |
+            Select-Object -Unique
+
+          foreach ($dir in $shortcutDirectories) {
+            New-Item -ItemType Directory -Path $dir -Force | Out-Null
+          }
+
+          function Resolve-AppTarget {
+            param(
+              [string[]] $CandidatePaths = @(),
+              [string[]] $SearchRoots = @(),
+              [string[]] $ExecutableNames = @()
+            )
+
+            foreach ($candidate in $CandidatePaths) {
+              if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+
+              $expanded = [Environment]::ExpandEnvironmentVariables($candidate)
+              if (Test-Path $expanded) {
+                return (Resolve-Path $expanded).Path
+              }
+            }
+
+            foreach ($root in $SearchRoots) {
+              if ([string]::IsNullOrWhiteSpace($root)) { continue }
+
+              $expandedRoot = [Environment]::ExpandEnvironmentVariables($root)
+              if (-not (Test-Path $expandedRoot)) { continue }
+
+              foreach ($exeName in $ExecutableNames) {
+                $found = Get-ChildItem `
+                  -Path $expandedRoot `
+                  -Filter $exeName `
+                  -File `
+                  -Recurse `
+                  -ErrorAction SilentlyContinue |
+                  Select-Object -First 1
+
+                if ($found) {
+                  return $found.FullName
+                }
+              }
+            }
+
+            return $null
+          }
+
+          function New-AppShortcut {
+            param(
+              [Parameter(Mandatory = $true)] [string] $Name,
+              [AllowNull()] [string] $TargetPath,
+              [string] $Arguments = "",
+              [string] $IconLocation = ""
+            )
+
+            if ([string]::IsNullOrWhiteSpace($TargetPath) -or -not (Test-Path $TargetPath)) {
+              Write-Warning "Shortcut skipped for $Name because target was not found: $TargetPath"
+              return
+            }
+
+            $shell = New-Object -ComObject WScript.Shell
+
+            foreach ($dir in $shortcutDirectories) {
+              $shortcutPath = Join-Path $dir "$Name.lnk"
+              $shortcut = $shell.CreateShortcut($shortcutPath)
+              $shortcut.TargetPath = $TargetPath
+              $shortcut.Arguments = $Arguments
+              $shortcut.WorkingDirectory = Split-Path $TargetPath -Parent
+              $shortcut.IconLocation = if ([string]::IsNullOrWhiteSpace($IconLocation)) { $TargetPath } else { $IconLocation }
+              $shortcut.Save()
+
+              Write-Host "✅ Shortcut created: $shortcutPath"
+            }
+          }
+
+          $runnerLocalPrograms = Join-Path $env:LOCALAPPDATA "Programs"
+          $runnerRoamingNpm = Join-Path $env:APPDATA "npm"
+
+          $chromeTarget = Resolve-AppTarget `
+            -CandidatePaths @(
+              "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
+              "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe"
+            ) `
+            -SearchRoots @(
+              "$env:ProgramFiles\Google",
+              "${env:ProgramFiles(x86)}\Google"
+            ) `
+            -ExecutableNames @("chrome.exe")
+
+          $winrarTarget = Resolve-AppTarget `
+            -CandidatePaths @(
+              "$env:ProgramFiles\WinRAR\WinRAR.exe",
+              "${env:ProgramFiles(x86)}\WinRAR\WinRAR.exe"
+            ) `
+            -SearchRoots @(
+              "$env:ProgramFiles\WinRAR",
+              "${env:ProgramFiles(x86)}\WinRAR"
+            ) `
+            -ExecutableNames @("WinRAR.exe")
+
+          $antigravityIdeTarget = Resolve-AppTarget `
+            -CandidatePaths @(
+              "$runnerLocalPrograms\Antigravity IDE\Antigravity IDE.exe",
+              "$env:LOCALAPPDATA\Antigravity IDE\Antigravity IDE.exe",
+              "C:\Users\runneradmin\AppData\Local\Programs\Antigravity IDE\Antigravity IDE.exe"
+            ) `
+            -SearchRoots @(
+              $runnerLocalPrograms,
+              "$env:LOCALAPPDATA",
+              "C:\Users\runneradmin\AppData\Local\Programs",
+              "$env:ProgramFiles\Antigravity IDE",
+              "${env:ProgramFiles(x86)}\Antigravity IDE"
+            ) `
+            -ExecutableNames @("Antigravity IDE.exe", "antigravity-ide.exe")
+
+          $nodeTarget = Resolve-AppTarget `
+            -CandidatePaths @(
+              "$env:ProgramFiles\nodejs\node.exe",
+              "${env:ProgramFiles(x86)}\nodejs\node.exe"
+            ) `
+            -SearchRoots @(
+              "$env:ProgramFiles\nodejs",
+              "${env:ProgramFiles(x86)}\nodejs"
+            ) `
+            -ExecutableNames @("node.exe")
+
+          $codexTarget = Resolve-AppTarget `
+            -CandidatePaths @(
+              "$runnerRoamingNpm\codex.cmd",
+              "$env:ProgramFiles\nodejs\codex.cmd",
+              "${env:ProgramFiles(x86)}\nodejs\codex.cmd"
+            ) `
+            -SearchRoots @(
+              $runnerRoamingNpm,
+              "$env:ProgramFiles\nodejs",
+              "${env:ProgramFiles(x86)}\nodejs"
+            ) `
+            -ExecutableNames @("codex.cmd", "codex.ps1")
+
+          New-AppShortcut -Name "Google Chrome" -TargetPath $chromeTarget
+          New-AppShortcut -Name "WinRAR" -TargetPath $winrarTarget
+          New-AppShortcut -Name "Antigravity IDE" -TargetPath $antigravityIdeTarget
+
+          if ($nodeTarget) {
+            New-AppShortcut -Name "Node.js Command Prompt" -TargetPath "$env:SystemRoot\System32\cmd.exe" -Arguments "/k `"$nodeTarget`" --version"
+          }
+
+          if ($codexTarget) {
+            New-AppShortcut -Name "Codex CLI" -TargetPath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Arguments "-NoExit -ExecutionPolicy Bypass -Command `"& '$codexTarget'`""
+          }
+
+          Write-Host "✅ Shortcut publishing completed"
 
       - name: 🐾 Install Tailscale
         shell: pwsh
