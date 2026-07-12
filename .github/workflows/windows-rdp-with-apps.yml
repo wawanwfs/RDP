@@ -290,6 +290,7 @@ jobs:
               [Parameter(Mandatory = $true)] [string] $Id,
               [Parameter(Mandatory = $true)] [string] $Name,
               [string[]] $FallbackIds = @(),
+              [string] $Scope = "",
               [switch] $Optional
             )
 
@@ -298,13 +299,21 @@ jobs:
             foreach ($packageId in $packageIds) {
               Write-Host "Installing $Name [$packageId]..."
 
-              & $winget install `
-                --id $packageId `
-                --exact `
-                --silent `
-                --accept-package-agreements `
-                --accept-source-agreements `
-                --disable-interactivity
+              $installArgs = @(
+                "install",
+                "--id", $packageId,
+                "--exact",
+                "--silent",
+                "--accept-package-agreements",
+                "--accept-source-agreements",
+                "--disable-interactivity"
+              )
+
+              if (-not [string]::IsNullOrWhiteSpace($Scope)) {
+                $installArgs += @("--scope", $Scope)
+              }
+
+              & $winget @installArgs
 
               if ($LASTEXITCODE -eq 0) {
                 Write-Host "✅ $Name installed with package ID: $packageId"
@@ -472,9 +481,29 @@ jobs:
           }
 
           if ($wantedVSCode) {
-            Install-WingetPackage -Id "Microsoft.VisualStudioCode" -Name "Visual Studio Code"
+            # Force machine-wide install so VS Code opens for the RDP user, not only runneradmin.
+            Install-WingetPackage -Id "Microsoft.VisualStudioCode" -Name "Visual Studio Code" -Scope "machine"
           } else {
             Write-Host "Skipping Visual Studio Code because ide_choice=$ideChoice"
+          }
+
+          if ($wantedVSCode) {
+            $vscodeMachineExe = Resolve-AppTarget `
+              -CandidatePaths @(
+                "$env:ProgramFiles\Microsoft VS Code\Code.exe",
+                "${env:ProgramFiles(x86)}\Microsoft VS Code\Code.exe"
+              ) `
+              -SearchRoots @(
+                "$env:ProgramFiles\Microsoft VS Code",
+                "${env:ProgramFiles(x86)}\Microsoft VS Code"
+              ) `
+              -ExecutableNames @("Code.exe")
+
+            if ($vscodeMachineExe) {
+              Write-Host "✅ VS Code machine-wide executable found: $vscodeMachineExe"
+            } else {
+              Write-Warning "VS Code was installed but machine-wide Code.exe was not found. The RDP user may not be able to open VS Code. Check the winget install log."
+            }
           }
 
           # Optional CapCut
@@ -1361,70 +1390,218 @@ jobs:
           $installCapCut = '${{ inputs.install_capcut }}'
           $hostnameMode = '${{ inputs.hostname_mode }}'
           $passwordMode = '${{ inputs.rdp_password_mode }}'
+          $durationHours = '${{ inputs.duration_hours }}'
+          $windowsVersion = '${{ inputs.windows_version }}'
+
+          function Test-AnyPath {
+            param([string[]] $Paths)
+
+            foreach ($path in $Paths) {
+              if ([string]::IsNullOrWhiteSpace($path)) { continue }
+
+              $expanded = [Environment]::ExpandEnvironmentVariables($path)
+              if (Test-Path $expanded) {
+                return $true
+              }
+            }
+
+            return $false
+          }
+
+          function Test-CommandExists {
+            param([string] $Name)
+
+            $cmd = Get-Command $Name -ErrorAction SilentlyContinue
+            return [bool]$cmd
+          }
+
+          function Get-InstallStatus {
+            param(
+              [bool] $Requested,
+              [bool] $Detected
+            )
+
+            if (-not $Requested) {
+              return "⏭️ Skipped"
+            }
+
+            if ($Detected) {
+              return "✅ Ready"
+            }
+
+            return "⚠️ Check logs"
+          }
+
+          function Add-Row {
+            param(
+              [System.Collections.Generic.List[string]] $Rows,
+              [string] $Col1,
+              [string] $Col2,
+              [string] $Col3 = ""
+            )
+
+            $Rows.Add("| $Col1 | $Col2 | $Col3 |") | Out-Null
+          }
 
           if ($passwordMode -eq "same_from_secret") {
-            $passwordDisplay = "Menggunakan GitHub Secret RDP_PASSWORD"
+            $passwordDisplay = "Use GitHub Secret ``RDP_PASSWORD``"
           } else {
-            $passwordDisplay = $env:RDP_PASSWORD
+            $passwordDisplay = "``$env:RDP_PASSWORD``"
           }
 
-          $apps = @(
-            "Chrome",
-            "WinRAR",
-            "Node.js LTS",
-            "Codex CLI",
-            "9Router"
+          $wantedVSCode = $ideChoice -in @("vscode", "both")
+          $wantedAntigravity = $ideChoice -in @("antigravity", "both")
+          $wantedCapCut = $installCapCut -eq "yes"
+
+          $chromeDetected = Test-AnyPath @(
+            "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
+            "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe"
           )
 
-          if ($ideChoice -eq "antigravity") {
-            $apps += "Antigravity IDE"
-          } elseif ($ideChoice -eq "vscode") {
-            $apps += "Visual Studio Code"
+          $winrarDetected = Test-AnyPath @(
+            "$env:ProgramFiles\WinRAR\WinRAR.exe",
+            "${env:ProgramFiles(x86)}\WinRAR\WinRAR.exe"
+          )
+
+          $nodeDetected = Test-AnyPath @(
+            "$env:ProgramFiles\nodejs\node.exe",
+            "${env:ProgramFiles(x86)}\nodejs\node.exe"
+          )
+
+          $vscodeDetected = Test-AnyPath @(
+            "$env:ProgramFiles\Microsoft VS Code\Code.exe",
+            "${env:ProgramFiles(x86)}\Microsoft VS Code\Code.exe",
+            "$env:LOCALAPPDATA\Programs\Microsoft VS Code\Code.exe"
+          )
+
+          $antigravityDetected = Test-AnyPath @(
+            "$env:LOCALAPPDATA\Programs\Antigravity IDE\Antigravity IDE.exe",
+            "$env:LOCALAPPDATA\Antigravity IDE\Antigravity IDE.exe",
+            "C:\Users\runneradmin\AppData\Local\Programs\Antigravity IDE\Antigravity IDE.exe",
+            "$env:ProgramFiles\Antigravity IDE\Antigravity IDE.exe",
+            "${env:ProgramFiles(x86)}\Antigravity IDE\Antigravity IDE.exe",
+            "$env:ProgramData\RDP-Setup\Antigravity IDE\Antigravity IDE.exe"
+          )
+
+          $capCutDetected = Test-AnyPath @(
+            "$env:ProgramFiles\CapCut\CapCut.exe",
+            "${env:ProgramFiles(x86)}\CapCut\CapCut.exe",
+            "$env:LOCALAPPDATA\CapCut\CapCut.exe",
+            "$env:LOCALAPPDATA\Programs\CapCut\CapCut.exe"
+          )
+
+          $codexDetected = (Test-CommandExists "codex") -or (Test-AnyPath @(
+            "$env:APPDATA\npm\codex.cmd",
+            "$env:ProgramFiles\nodejs\codex.cmd",
+            "${env:ProgramFiles(x86)}\nodejs\codex.cmd"
+          ))
+
+          $nineRouterDetected = (Test-CommandExists "9router") -or (Test-AnyPath @(
+            "$env:APPDATA\npm\9router.cmd",
+            "$env:ProgramFiles\nodejs\9router.cmd",
+            "${env:ProgramFiles(x86)}\nodejs\9router.cmd"
+          ))
+
+          $appRows = [System.Collections.Generic.List[string]]::new()
+          $appRows.Add("| Application | Status | Notes |") | Out-Null
+          $appRows.Add("|---|---:|---|") | Out-Null
+
+          Add-Row $appRows "Google Chrome" (Get-InstallStatus $true $chromeDetected) "Browser utama"
+          Add-Row $appRows "WinRAR" (Get-InstallStatus $true $winrarDetected) "Archive manager"
+          Add-Row $appRows "Node.js LTS" (Get-InstallStatus $true $nodeDetected) "Runtime untuk npm"
+          Add-Row $appRows "Codex CLI" (Get-InstallStatus $true $codexDetected) "Install via npm ``@openai/codex``"
+          Add-Row $appRows "9Router CLI" (Get-InstallStatus $true $nineRouterDetected) "Install via npm ``9router``"
+          Add-Row $appRows "Visual Studio Code" (Get-InstallStatus $wantedVSCode $vscodeDetected) "Machine-wide install"
+          Add-Row $appRows "Antigravity IDE" (Get-InstallStatus $wantedAntigravity $antigravityDetected) "Prepared for RDP user"
+          Add-Row $appRows "CapCut" (Get-InstallStatus $wantedCapCut $capCutDetected) "Optional"
+
+          $extensionRows = [System.Collections.Generic.List[string]]::new()
+          $extensionRows.Add("| Target | Extension / Feature | Status |") | Out-Null
+          $extensionRows.Add("|---|---|---:|") | Out-Null
+
+          if ($wantedVSCode) {
+            Add-Row $extensionRows "VS Code" "OpenAI / Codex extension ``OpenAI.chatgpt``" "✅ Configured"
+            Add-Row $extensionRows "VS Code" "Office Viewer ``cweijan.vscode-office``" "✅ Configured"
           } else {
-            $apps += "Antigravity IDE"
-            $apps += "Visual Studio Code"
+            Add-Row $extensionRows "VS Code" "OpenAI + Office Viewer extensions" "⏭️ Skipped"
           }
 
-          if ($installCapCut -eq "yes") {
-            $apps += "CapCut"
+          if ($wantedAntigravity) {
+            Add-Row $extensionRows "Antigravity" "OpenAI + Office Viewer extensions" "✅ Best effort"
+          } else {
+            Add-Row $extensionRows "Antigravity" "OpenAI + Office Viewer extensions" "⏭️ Skipped"
           }
 
-          $appsText = $apps -join ", "
+          Add-Row $extensionRows "Chrome" "Cookie-Editor + GoFullPage" "✅ Policy configured"
 
-          $summary = @"
-          ## 🚀 Windows RDP Session Ready
+          $summaryLines = [System.Collections.Generic.List[string]]::new()
 
-          | Parameter | Value |
-          |-----------|-------|
-          | 🖥️ OS | `${{ inputs.windows_version }}` |
-          | 🌐 Tailscale Hostname | `$env:TAILSCALE_HOSTNAME` |
-          | 🌐 Tailscale IP | `$env:TAILSCALE_IP` |
-          | 🧭 Hostname Mode | `$hostnameMode` |
-          | 👤 Username | `$env:RDP_USER` |
-          | 🔑 Password | `$passwordDisplay` |
-          | 🔐 Password Mode | `$passwordMode` |
-          | ⏱️ Duration | `${{ inputs.duration_hours }} Hour(s)` |
-          | 🧠 IDE Choice | `$ideChoice` |
-          | ✂️ CapCut | `$installCapCut` |
-          | 📦 Apps | `$appsText` |
-          | 🧩 IDE Extensions | Codex/OpenAI (`OpenAI.chatgpt`), Office Viewer (`cweijan.vscode-office`) |
-          | 🧩 Chrome Extensions | Cookie-Editor, GoFullPage |
+          $summaryLines.Add("# 🪟 Windows RDP Dashboard") | Out-Null
+          $summaryLines.Add("") | Out-Null
+          $summaryLines.Add("> ✅ Runner siap digunakan. Gunakan hostname sebagai alamat utama, lalu pakai IP Tailscale sebagai fallback jika MagicDNS belum resolve.") | Out-Null
+          $summaryLines.Add("") | Out-Null
 
-          ---
+          $summaryLines.Add("## 🎯 Recommended Login") | Out-Null
+          $summaryLines.Add("") | Out-Null
+          $summaryLines.Add("| Use this | Value |") | Out-Null
+          $summaryLines.Add("|---|---|") | Out-Null
+          $summaryLines.Add("| Primary address | ``$env:TAILSCALE_HOSTNAME`` |") | Out-Null
+          $summaryLines.Add("| Fallback address | ``$env:TAILSCALE_IP`` |") | Out-Null
+          $summaryLines.Add("| Username | ``$env:RDP_USER`` |") | Out-Null
+          $summaryLines.Add("| Password | $passwordDisplay |") | Out-Null
+          $summaryLines.Add("") | Out-Null
 
-          ### Cara Login
+          $summaryLines.Add("## 🔗 Connection Details") | Out-Null
+          $summaryLines.Add("") | Out-Null
+          $summaryLines.Add("| Item | Value |") | Out-Null
+          $summaryLines.Add("|---|---|") | Out-Null
+          $summaryLines.Add("| OS / Runner | ``$windowsVersion`` |") | Out-Null
+          $summaryLines.Add("| Tailscale Hostname | ``$env:TAILSCALE_HOSTNAME`` |") | Out-Null
+          $summaryLines.Add("| Tailscale IP | ``$env:TAILSCALE_IP`` |") | Out-Null
+          $summaryLines.Add("| Hostname Mode | ``$hostnameMode`` |") | Out-Null
+          $summaryLines.Add("| Password Mode | ``$passwordMode`` |") | Out-Null
+          $summaryLines.Add("| Runtime Duration | ``$durationHours hour(s)`` |") | Out-Null
+          $summaryLines.Add("| IDE Choice | ``$ideChoice`` |") | Out-Null
+          $summaryLines.Add("| CapCut Option | ``$installCapCut`` |") | Out-Null
+          $summaryLines.Add("") | Out-Null
 
-          1. Buka Microsoft Remote Desktop.
-          2. Masukkan Tailscale Hostname `$env:TAILSCALE_HOSTNAME` atau Tailscale IP `$env:TAILSCALE_IP`.
-          3. Username: `RDP`
-          4. Password: lihat tabel di atas. Jika mode `same_from_secret`, gunakan password dari GitHub Secret `RDP_PASSWORD`.
-          5. Pastikan perangkat Anda sudah login ke Tailscale yang sama dan MagicDNS aktif jika ingin login memakai hostname.
-          6. Buka shortcut IDE yang dipilih dari Desktop atau Start Menu. Extension akan dipasang otomatis untuk user RDP saat login.
-          7. Saat runtime selesai atau workflow masuk cleanup, Tailscale akan logout otomatis.
+          $summaryLines.Add("## 📦 App Status") | Out-Null
+          $summaryLines.Add("") | Out-Null
+          foreach ($line in $appRows) { $summaryLines.Add($line) | Out-Null }
+          $summaryLines.Add("") | Out-Null
 
-          "@
+          $summaryLines.Add("## 🧩 Extensions & Policies") | Out-Null
+          $summaryLines.Add("") | Out-Null
+          foreach ($line in $extensionRows) { $summaryLines.Add($line) | Out-Null }
+          $summaryLines.Add("") | Out-Null
 
-          $summary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          $summaryLines.Add("## 🚀 How to Connect") | Out-Null
+          $summaryLines.Add("") | Out-Null
+          $summaryLines.Add("1. Buka **Microsoft Remote Desktop** di perangkat kamu.") | Out-Null
+          $summaryLines.Add("2. Pastikan perangkat kamu sudah login ke **Tailscale tailnet yang sama**.") | Out-Null
+          $summaryLines.Add("3. Masukkan **Primary address**: ``$env:TAILSCALE_HOSTNAME``.") | Out-Null
+          $summaryLines.Add("4. Jika hostname belum connect, pakai **Fallback address**: ``$env:TAILSCALE_IP``.") | Out-Null
+          $summaryLines.Add("5. Login dengan username ``$env:RDP_USER`` dan password di bagian Recommended Login.") | Out-Null
+          $summaryLines.Add("6. Buka IDE dari Desktop atau Start Menu setelah masuk RDP.") | Out-Null
+          $summaryLines.Add("") | Out-Null
+
+          $summaryLines.Add("## 🧯 Troubleshooting") | Out-Null
+          $summaryLines.Add("") | Out-Null
+          $summaryLines.Add("| Problem | Try this |") | Out-Null
+          $summaryLines.Add("|---|---|") | Out-Null
+          $summaryLines.Add("| Hostname tidak bisa connect | Pakai IP Tailscale fallback ``$env:TAILSCALE_IP`` |") | Out-Null
+          $summaryLines.Add("| Password ditolak | Cek ``rdp_password_mode``; jika ``same_from_secret``, gunakan secret ``RDP_PASSWORD`` |") | Out-Null
+          $summaryLines.Add("| VS Code tidak terbuka | Buka dari Start Menu, atau cek status ``Visual Studio Code`` di tabel App Status |") | Out-Null
+          $summaryLines.Add("| Antigravity belum muncul | Login ulang ke user RDP atau buka shortcut Antigravity; workflow menyiapkan copy per-user |") | Out-Null
+          $summaryLines.Add("| RDP timeout | Pastikan device lokal sudah connect ke Tailscale dan berada di tailnet yang sama |") | Out-Null
+          $summaryLines.Add("| MagicDNS belum resolve | Tunggu sebentar atau langsung pakai IP Tailscale |") | Out-Null
+          $summaryLines.Add("") | Out-Null
+
+          $summaryLines.Add("## 🧹 Cleanup") | Out-Null
+          $summaryLines.Add("") | Out-Null
+          $summaryLines.Add("Saat runtime selesai, gagal, atau workflow masuk cleanup, step terakhir akan mencoba menjalankan ``tailscale logout`` otomatis.") | Out-Null
+
+          $summaryLines -join "`n" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
 
       - name: ⏳ Show Access Info & Keep Alive
         shell: pwsh
