@@ -290,6 +290,7 @@ jobs:
               [Parameter(Mandatory = $true)] [string] $Id,
               [Parameter(Mandatory = $true)] [string] $Name,
               [string[]] $FallbackIds = @(),
+              [scriptblock] $FallbackInstaller = $null,
               [string] $Scope = "",
               [switch] $Optional
             )
@@ -321,6 +322,17 @@ jobs:
               }
 
               Write-Warning "Install failed for $packageId. Trying fallback if available..."
+            }
+
+            if ($FallbackInstaller) {
+              Write-Warning "Trying fallback installer for $Name..."
+              try {
+                & $FallbackInstaller
+                Write-Host "✅ $Name installed via fallback installer"
+                return $true
+              } catch {
+                Write-Warning "Fallback installer failed for $Name: $($_.Exception.Message)"
+              }
             }
 
             if ($Optional) {
@@ -469,7 +481,39 @@ jobs:
           }
 
           # Base apps
-          Install-WingetPackage -Id "Google.Chrome" -Name "Google Chrome"
+          Install-WingetPackage `
+            -Id "Google.Chrome" `
+            -Name "Google Chrome" `
+            -FallbackInstaller {
+              $is64BitRunner = [Environment]::Is64BitOperatingSystem
+              $chromeMsiUrl = if ($is64BitRunner) {
+                "https://dl.google.com/dl/chrome/install/googlechromestandaloneenterprise64.msi"
+              } else {
+                "https://dl.google.com/dl/chrome/install/googlechromestandaloneenterprise.msi"
+              }
+              $chromeMsiPath = Join-Path $env:TEMP "chrome-enterprise.msi"
+
+              Write-Host "Downloading fallback Chrome installer from: $chromeMsiUrl"
+              Invoke-WebRequest `
+                -Uri $chromeMsiUrl `
+                -OutFile $chromeMsiPath `
+                -UseBasicParsing
+
+              if (-not (Test-Path $chromeMsiPath)) {
+                throw "Chrome MSI fallback download failed"
+              }
+
+              $chromeInstall = Start-Process msiexec.exe `
+                -ArgumentList "/i", "`"$chromeMsiPath`"", "/qn", "/norestart" `
+                -Wait `
+                -PassThru
+
+              Remove-Item $chromeMsiPath -Force -ErrorAction SilentlyContinue
+
+              if ($chromeInstall.ExitCode -ne 0) {
+                throw "Chrome MSI fallback install failed with exit code $($chromeInstall.ExitCode)"
+              }
+            }
           Install-WingetPackage -Id "RARLab.WinRAR" -Name "WinRAR"
           Install-WingetPackage -Id "OpenJS.NodeJS.LTS" -Name "Node.js LTS"
 
