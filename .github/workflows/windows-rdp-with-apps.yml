@@ -1,6 +1,6 @@
 name: 🪟 Windows RDP with Apps
 
-on:
+"on":
   workflow_dispatch:
     inputs:
       windows_version:
@@ -773,7 +773,7 @@ jobs:
                 -RunLevel Highest `
                 -Force | Out-Null
 
-              Write-Host "✅ Logon task registered for $env:RDP_USER`: $TaskName"
+              Write-Host "✅ Logon task registered for ${env:RDP_USER}: $TaskName"
             } catch {
               Write-Warning "Could not register logon task '$TaskName': $($_.Exception.Message)"
             }
@@ -957,7 +957,7 @@ jobs:
             }
           }
 
-          # ArtCraft is optional and disabled by default.
+          # ArtCraft is optional and enabled by default; the workflow input can disable it.
           if ($installArtCraft) {
             Invoke-OptionalInstall 'ArtCraft' {
               Install-ArtCraft
