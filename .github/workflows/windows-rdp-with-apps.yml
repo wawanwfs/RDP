@@ -34,21 +34,76 @@ on:
       ide_choice:
         description: "Pilih IDE yang akan diinstall"
         required: true
-        default: "vscode"
+        default: "none"
         type: choice
         options:
+          - "none"
           - "antigravity"
           - "vscode"
           - "both"
 
-      install_capcut:
-        description: "Install CapCut?"
+      editor_choice:
+        description: "Pilih video editor"
         required: true
-        default: "no"
+        default: "none"
         type: choice
         options:
-          - "no"
-          - "yes"
+          - "none"
+          - "capcut"
+          - "shotcut"
+          - "both"
+
+      metatrader_choice:
+        description: "Pilih MetaTrader"
+        required: true
+        default: "none"
+        type: choice
+        options:
+          - "none"
+          - "mt4"
+          - "mt5"
+          - "both"
+
+      router_choice:
+        description: "Pilih AI API Router"
+        required: true
+        default: "none"
+        type: choice
+        options:
+          - "none"
+          - "9router"
+          - "omniroute"
+          - "both"
+
+      coding_agent_choice:
+        description: "Pilih coding agent"
+        required: true
+        default: "none"
+        type: choice
+        options:
+          - "none"
+          - "codex"
+          - "claude"
+          - "both"
+
+      ai_agent_choice:
+        description: "Pilih AI agent (Hermes, OpenClaw, atau OpenCode)"
+        required: true
+        default: "none"
+        type: choice
+        options:
+          - "none"
+          - "hermes"
+          - "openclaw"
+          - "opencode"
+          - "both"
+          - "all"
+
+      install_artcraft:
+        description: "Install ArtCraft"
+        required: true
+        default: true
+        type: boolean
 
       tailscale_hostname:
         description: "Nama dasar hostname Tailscale/RDP"
@@ -125,9 +180,7 @@ jobs:
           Set-Service -Name "Audiosrv" -StartupType Automatic -ErrorAction SilentlyContinue
           Start-Service -Name "Audiosrv" -ErrorAction SilentlyContinue
 
-          # Optional Defender optimization
-          Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue
-
+          # Keep Microsoft Defender real-time protection enabled.
           # Network tweaks
           netsh int tcp set global autotuninglevel=normal
           netsh int tcp set global chimney=disabled
@@ -147,17 +200,18 @@ jobs:
             -Value 0 `
             -Force
 
-          # Compatibility mode for GitHub Actions RDP
+          # Keep Network Level Authentication (NLA) and TLS enabled.
+          # RDP access is restricted to Tailscale IPv4 clients by the firewall rule below.
           Set-ItemProperty `
             -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
             -Name "UserAuthentication" `
-            -Value 0 `
+            -Value 1 `
             -Force
 
           Set-ItemProperty `
             -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
             -Name "SecurityLayer" `
-            -Value 0 `
+            -Value 2 `
             -Force
 
           # 32-bit color depth
@@ -168,7 +222,10 @@ jobs:
             -Force `
             -ErrorAction SilentlyContinue
 
-          # Firewall rule
+          # Disable broad built-in RDP rules and allow RDP only from Tailscale IPv4 space.
+          Get-NetFirewallRule -DisplayGroup "Remote Desktop" -ErrorAction SilentlyContinue |
+            Disable-NetFirewallRule -ErrorAction SilentlyContinue
+
           netsh advfirewall firewall delete rule name="RDP-Tailscale" 2>$null
 
           netsh advfirewall firewall add rule `
@@ -176,9 +233,13 @@ jobs:
             dir=in `
             action=allow `
             protocol=TCP `
-            localport=3389
+            localport=3389 `
+            remoteip=100.64.0.0/10 `
+            profile=any
 
-          Enable-NetFirewallRule -DisplayGroup "Remote Desktop" -ErrorAction SilentlyContinue
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to create the Tailscale-only RDP firewall rule."
+          }
 
           Restart-Service -Name TermService -Force
 
@@ -250,12 +311,25 @@ jobs:
           Write-Host "==========================================="
 
           $ideChoice = '${{ inputs.ide_choice }}'
-          $installCapCut = '${{ inputs.install_capcut }}'
+          $editorChoice = '${{ inputs.editor_choice }}'
+          $metatraderChoice = '${{ inputs.metatrader_choice }}'
+          $routerChoice = '${{ inputs.router_choice }}'
+          $codingAgentChoice = '${{ inputs.coding_agent_choice }}'
+          $aiAgentChoice = '${{ inputs.ai_agent_choice }}'
+          $installArtCraft = '${{ inputs.install_artcraft }}' -eq 'true'
+
           $wantedVSCode = $ideChoice -in @("vscode", "both")
           $wantedAntigravity = $ideChoice -in @("antigravity", "both")
+          $wantedCapCut = $editorChoice -in @("capcut", "both")
+          $wantedShotcut = $editorChoice -in @("shotcut", "both")
 
-          Write-Host "IDE choice      : $ideChoice"
-          Write-Host "Install CapCut  : $installCapCut"
+          Write-Host "IDE choice          : $ideChoice"
+          Write-Host "Video editor choice : $editorChoice"
+          Write-Host "MetaTrader choice   : $metatraderChoice"
+          Write-Host "Router choice       : $routerChoice"
+          Write-Host "Coding agent choice : $codingAgentChoice"
+          Write-Host "AI agent choice     : $aiAgentChoice"
+          Write-Host "Install ArtCraft    : $installArtCraft"
 
           # Resolve winget path on GitHub Actions Windows runners
           $winget = (Get-Command winget.exe -ErrorAction SilentlyContinue).Source
@@ -298,30 +372,46 @@ jobs:
             $packageIds = @($Id) + $FallbackIds
 
             foreach ($packageId in $packageIds) {
-              Write-Host "Installing $Name [$packageId]..."
+              $installed = $false
 
-              $installArgs = @(
-                "install",
-                "--id", $packageId,
-                "--exact",
-                "--silent",
-                "--accept-package-agreements",
-                "--accept-source-agreements",
-                "--disable-interactivity"
-              )
+              for ($attempt = 1; $attempt -le 2; $attempt++) {
+                Write-Host "Installing $Name [$packageId], attempt $attempt/2..."
 
-              if (-not [string]::IsNullOrWhiteSpace($Scope)) {
-                $installArgs += @("--scope", $Scope)
+                $installArgs = @(
+                  "install",
+                  "--id", $packageId,
+                  "--exact",
+                  "--source", "winget",
+                  "--silent",
+                  "--accept-package-agreements",
+                  "--accept-source-agreements",
+                  "--disable-interactivity"
+                )
+
+                if (-not [string]::IsNullOrWhiteSpace($Scope)) {
+                  $installArgs += @("--scope", $Scope)
+                }
+
+                & $winget @installArgs
+                $installExitCode = $LASTEXITCODE
+
+                if ($installExitCode -eq 0) {
+                  Write-Host "✅ $Name installed with package ID: $packageId"
+                  $installed = $true
+                  break
+                }
+
+                Write-Warning "Install failed for $packageId with exit code $installExitCode."
+                if ($attempt -lt 2) {
+                  Start-Sleep -Seconds 4
+                }
               }
 
-              & $winget @installArgs
-
-              if ($LASTEXITCODE -eq 0) {
-                Write-Host "✅ $Name installed with package ID: $packageId"
+              if ($installed) {
                 return $true
               }
 
-              Write-Warning "Install failed for $packageId. Trying fallback if available..."
+              Write-Warning "Both installation attempts failed for $packageId. Trying fallback if available..."
             }
 
             if ($FallbackInstaller) {
@@ -382,6 +472,215 @@ jobs:
             }
 
             return $null
+          }
+
+          function Refresh-InstallerPath {
+            $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+            $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+            $currentPathEntries = @($env:Path -split ';' | Where-Object { $_ })
+            $storedPathEntries = @($machinePath -split ';') + @($userPath -split ';')
+            $missingPathEntries = @(
+              $storedPathEntries |
+                Where-Object { $_ -and $_ -notin $currentPathEntries }
+            )
+
+            if ($missingPathEntries.Count -gt 0) {
+              $env:Path = (@($currentPathEntries + $missingPathEntries) | Select-Object -Unique) -join ';'
+            }
+          }
+
+          function Invoke-OptionalInstall {
+            param(
+              [Parameter(Mandatory = $true)] [string] $Name,
+              [Parameter(Mandatory = $true)] [scriptblock] $Action
+            )
+
+            try {
+              Write-Host "Starting optional installation: $Name"
+              & $Action
+              Write-Host "Finished optional installation attempt: $Name"
+            } catch {
+              Write-Warning "Optional installation failed for ${Name}: $($_.Exception.Message)"
+            }
+          }
+
+          function Install-NpmGlobalPackage {
+            param(
+              [Parameter(Mandatory = $true)] [string] $PackageName
+            )
+
+            if (-not $npm -or -not (Test-Path $npm)) {
+              throw "npm.cmd is not available; cannot install $PackageName."
+            }
+
+            & $npm install --global "$PackageName@latest"
+            if ($LASTEXITCODE -ne 0) {
+              throw "npm install failed for $PackageName with exit code $LASTEXITCODE."
+            }
+
+            Refresh-InstallerPath
+          }
+
+          function Install-MetaTrader {
+            param(
+              [Parameter(Mandatory = $true)]
+              [ValidateSet('mt4', 'mt5')]
+              [string] $Version
+            )
+
+            $installerUrl = if ($Version -eq 'mt4') {
+              'https://download.mql5.com/cdn/web/metaquotes.software.corp/mt4/mt4setup.exe'
+            } else {
+              'https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe'
+            }
+
+            $installerPath = Join-Path $env:TEMP "metatrader-$Version-setup.exe"
+            Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath -UseBasicParsing -ErrorAction Stop
+
+            if (-not (Test-Path $installerPath)) {
+              throw "MetaTrader $Version installer download did not create a file."
+            }
+
+            $signature = Get-AuthenticodeSignature -FilePath $installerPath
+            if ($signature.Status -ne 'Valid') {
+              throw "MetaTrader $Version installer signature is not valid: $($signature.Status)."
+            }
+
+            $process = Start-Process -FilePath $installerPath -ArgumentList '/auto' -Wait -PassThru
+            Remove-Item -LiteralPath $installerPath -Force -ErrorAction SilentlyContinue
+
+            if ($process.ExitCode -ne 0) {
+              throw "MetaTrader $Version installer exited with code $($process.ExitCode)."
+            }
+
+            Write-Host "MetaTrader $Version installer completed."
+          }
+
+          function Install-ArtCraft {
+            $headers = @{
+              'User-Agent' = 'Windows-RDP-GitHub-Actions'
+              'Accept' = 'application/vnd.github+json'
+            }
+
+            $release = Invoke-RestMethod `
+              -Uri 'https://api.github.com/repos/artcraft-IDE/artcraft/releases/latest' `
+              -Headers $headers `
+              -ErrorAction Stop
+
+            $asset = $release.assets |
+              Where-Object { $_.name -eq 'artcraft-x64.7z' } |
+              Select-Object -First 1
+
+            if (-not $asset) {
+              throw 'The latest ArtCraft release does not contain artcraft-x64.7z.'
+            }
+
+            $archivePath = Join-Path $env:TEMP 'artcraft-x64.7z'
+            Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $archivePath -UseBasicParsing -ErrorAction Stop
+
+            $sevenZip = (Get-Command 7z.exe -ErrorAction SilentlyContinue).Source
+            if (-not $sevenZip) {
+              Install-WingetPackage -Id '7zip.7zip' -Name '7-Zip' -Optional | Out-Null
+              Refresh-InstallerPath
+              $sevenZip = (Get-Command 7z.exe -ErrorAction SilentlyContinue).Source
+            }
+
+            if (-not $sevenZip) {
+              $sevenZipCandidates = @(
+                "$env:ProgramFiles\7-Zip\7z.exe",
+                "${env:ProgramFiles(x86)}\7-Zip\7z.exe"
+              )
+              $sevenZip = $sevenZipCandidates |
+                Where-Object { $_ -and (Test-Path $_) } |
+                Select-Object -First 1
+            }
+
+            if (-not $sevenZip) {
+              throw '7-Zip was not found; cannot extract the ArtCraft release archive.'
+            }
+
+            $installRoot = Join-Path $env:ProgramData 'RDP-Setup\ArtCraft'
+            New-Item -Path $installRoot -ItemType Directory -Force | Out-Null
+
+            & $sevenZip x $archivePath "-o$installRoot" -y
+            if ($LASTEXITCODE -ne 0) {
+              throw "ArtCraft archive extraction failed with exit code $LASTEXITCODE."
+            }
+
+            $appExe = Get-ChildItem -Path $installRoot -Filter '*.exe' -Recurse -File -ErrorAction SilentlyContinue |
+              Where-Object {
+                $_.Name -match 'artcraft' -and
+                $_.Name -notmatch 'setup|installer|uninstall|update'
+              } |
+              Sort-Object Length -Descending |
+              Select-Object -First 1
+
+            if (-not $appExe) {
+              throw 'ArtCraft archive was extracted, but no ArtCraft application executable was found.'
+            }
+
+            "ARTCRAFT_EXE=$($appExe.FullName)" | Out-File -Append -FilePath $env:GITHUB_ENV -Encoding utf8
+            Write-Host "ArtCraft executable found: $($appExe.FullName)"
+          }
+
+          function Install-OfficialPowerShellApp {
+            param(
+              [Parameter(Mandatory = $true)] [string] $Name,
+              [Parameter(Mandatory = $true)] [string] $Uri,
+              [ValidateSet('plain', 'hermes', 'openclaw')]
+              [string] $Mode = 'plain'
+            )
+
+            $response = Invoke-WebRequest -Uri $Uri -UseBasicParsing -ErrorAction Stop
+            $scriptText = ([string]$response.Content).TrimStart([char]0xFEFF)
+
+            if ([string]::IsNullOrWhiteSpace($scriptText)) {
+              throw "Installer download for $Name was empty."
+            }
+
+            $installerScript = [scriptblock]::Create($scriptText)
+
+            switch ($Mode) {
+              'hermes' { & $installerScript -NonInteractive -Branch 'main' }
+              'openclaw' { & $installerScript -NoOnboard }
+              default { & $installerScript }
+            }
+
+            Refresh-InstallerPath
+          }
+
+          function Set-ChromeDefaultAssociations {
+            $setupDir = Join-Path $env:ProgramData 'RDP-Setup'
+            New-Item -Path $setupDir -ItemType Directory -Force | Out-Null
+
+            $associationPath = Join-Path $setupDir 'DefaultAppAssociations.xml'
+            $associationXml = @'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <DefaultAssociations>
+            <Association Identifier="http" ProgId="ChromeHTML" ApplicationName="Google Chrome" />
+            <Association Identifier="https" ProgId="ChromeHTML" ApplicationName="Google Chrome" />
+            <Association Identifier=".htm" ProgId="ChromeHTML" ApplicationName="Google Chrome" />
+            <Association Identifier=".html" ProgId="ChromeHTML" ApplicationName="Google Chrome" />
+          </DefaultAssociations>
+          '@
+
+            Set-Content -LiteralPath $associationPath -Value $associationXml -Encoding UTF8
+
+            $policyPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\System'
+            New-Item -Path $policyPath -Force | Out-Null
+            New-ItemProperty `
+              -Path $policyPath `
+              -Name 'DefaultAssociationsConfiguration' `
+              -Value $associationPath `
+              -PropertyType String `
+              -Force | Out-Null
+
+            & dism.exe /Online "/Import-DefaultAppAssociations:$associationPath" | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+              Write-Warning "DISM could not import Chrome default associations (exit code $LASTEXITCODE); policy was still configured for sign-in."
+            } else {
+              Write-Host 'Chrome default associations imported for new user profiles.'
+            }
           }
 
           function Resolve-VSCodeCli {
@@ -480,7 +779,7 @@ jobs:
             }
           }
 
-          # Base apps
+          # Base applications retained for every run.
           Install-WingetPackage `
             -Id "Google.Chrome" `
             -Name "Google Chrome" `
@@ -497,10 +796,11 @@ jobs:
               Invoke-WebRequest `
                 -Uri $chromeMsiUrl `
                 -OutFile $chromeMsiPath `
-                -UseBasicParsing
+                -UseBasicParsing `
+                -ErrorAction Stop
 
               if (-not (Test-Path $chromeMsiPath)) {
-                throw "Chrome MSI fallback download failed"
+                throw "Chrome MSI fallback download failed."
               }
 
               $chromeInstall = Start-Process msiexec.exe `
@@ -511,22 +811,29 @@ jobs:
               Remove-Item $chromeMsiPath -Force -ErrorAction SilentlyContinue
 
               if ($chromeInstall.ExitCode -ne 0) {
-                throw "Chrome MSI fallback install failed with exit code $($chromeInstall.ExitCode)"
+                throw "Chrome MSI fallback install failed with exit code $($chromeInstall.ExitCode)."
               }
             }
+
           Install-WingetPackage -Id "RARLab.WinRAR" -Name "WinRAR"
           Install-WingetPackage -Id "OpenJS.NodeJS.LTS" -Name "Node.js LTS"
 
-          # IDE choice
+          # Apply Chrome as the default browser for new Windows profiles and through policy.
+          Set-ChromeDefaultAssociations
+
+          # IDE choice: default none.
           if ($wantedAntigravity) {
-            Install-WingetPackage -Id "Google.AntigravityIDE" -Name "Antigravity IDE"
+            Invoke-OptionalInstall 'Antigravity IDE' {
+              Install-WingetPackage -Id "Google.AntigravityIDE" -Name "Antigravity IDE" -Optional | Out-Null
+            }
           } else {
             Write-Host "Skipping Antigravity IDE because ide_choice=$ideChoice"
           }
 
           if ($wantedVSCode) {
-            # Force machine-wide install so VS Code opens for the RDP user, not only runneradmin.
-            Install-WingetPackage -Id "Microsoft.VisualStudioCode" -Name "Visual Studio Code" -Scope "machine"
+            Invoke-OptionalInstall 'Visual Studio Code' {
+              Install-WingetPackage -Id "Microsoft.VisualStudioCode" -Name "Visual Studio Code" -Scope "machine" -Optional | Out-Null
+            }
           } else {
             Write-Host "Skipping Visual Studio Code because ide_choice=$ideChoice"
           }
@@ -544,20 +851,26 @@ jobs:
               -ExecutableNames @("Code.exe")
 
             if ($vscodeMachineExe) {
-              Write-Host "✅ VS Code machine-wide executable found: $vscodeMachineExe"
+              Write-Host "VS Code machine-wide executable found: $vscodeMachineExe"
             } else {
-              Write-Warning "VS Code was installed but machine-wide Code.exe was not found. The RDP user may not be able to open VS Code. Check the winget install log."
+              Write-Warning "VS Code executable was not found after installation. Check the winget logs."
             }
           }
 
-          # Optional CapCut
-          if ($installCapCut -eq "yes") {
-            Install-WingetPackage -Id "ByteDance.CapCut" -Name "CapCut" -Optional
-          } else {
-            Write-Host "Skipping CapCut because install_capcut=$installCapCut"
+          # Video editor choice: default none.
+          if ($wantedCapCut) {
+            Invoke-OptionalInstall 'CapCut' {
+              Install-WingetPackage -Id "ByteDance.CapCut" -Name "CapCut" -Optional | Out-Null
+            }
           }
 
-          # Resolve npm after Node.js installation
+          if ($wantedShotcut) {
+            Invoke-OptionalInstall 'Shotcut' {
+              Install-WingetPackage -Id "Meltytech.Shotcut" -Name "Shotcut" -Optional | Out-Null
+            }
+          }
+
+          # Resolve npm after Node.js installation. Node.js is retained as a base dependency.
           $npm = $null
           $npmCandidates = @(
             "$env:ProgramFiles\nodejs\npm.cmd",
@@ -573,32 +886,83 @@ jobs:
           }
 
           if (-not $npm) {
-            Write-Error "❌ npm.cmd tidak ditemukan setelah instalasi Node.js"
+            Write-Error "npm.cmd was not found after Node.js installation."
             exit 1
           }
 
-          # Codex CLI via official npm package
-          Write-Host "Installing Codex CLI using npm: $npm"
-          & $npm install -g @openai/codex
-
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "❌ Codex CLI installation failed"
-            exit 1
+          # MetaTrader installers are fetched from MetaQuotes' official CDN.
+          if ($metatraderChoice -in @('mt4', 'both')) {
+            Invoke-OptionalInstall 'MetaTrader 4' {
+              Install-MetaTrader -Version 'mt4'
+            }
           }
 
-          Write-Host "✅ Codex CLI installed"
-
-          # 9Router CLI via npm package
-          Write-Host "Installing 9Router CLI using npm: $npm"
-          & $npm install -g 9router
-
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "❌ 9Router CLI installation failed"
-            exit 1
+          if ($metatraderChoice -in @('mt5', 'both')) {
+            Invoke-OptionalInstall 'MetaTrader 5' {
+              Install-MetaTrader -Version 'mt5'
+            }
           }
 
-          Write-Host "✅ 9Router CLI installed"
+          # AI API routers: default none.
+          if ($routerChoice -in @('9router', 'both')) {
+            Invoke-OptionalInstall '9Router' {
+              Install-NpmGlobalPackage -PackageName '9router'
+            }
+          }
 
+          if ($routerChoice -in @('omniroute', 'both')) {
+            Invoke-OptionalInstall 'OmniRoute' {
+              Install-NpmGlobalPackage -PackageName 'omniroute'
+            }
+          }
+
+          # Coding agents: default none. Codex uses its npm package; Claude Code uses its official installer.
+          if ($codingAgentChoice -in @('codex', 'both')) {
+            Invoke-OptionalInstall 'Codex CLI' {
+              Install-NpmGlobalPackage -PackageName '@openai/codex'
+            }
+          }
+
+          if ($codingAgentChoice -in @('claude', 'both')) {
+            Invoke-OptionalInstall 'Claude Code' {
+              Install-OfficialPowerShellApp `
+                -Name 'Claude Code' `
+                -Uri 'https://claude.ai/install.ps1' `
+                -Mode 'plain'
+            }
+          }
+
+          # Native Windows installers are run non-interactively to avoid hanging the workflow.
+          if ($aiAgentChoice -in @('hermes', 'both', 'all')) {
+            Invoke-OptionalInstall 'Hermes Agent' {
+              Install-OfficialPowerShellApp `
+                -Name 'Hermes Agent' `
+                -Uri 'https://hermes-agent.nousresearch.com/install.ps1' `
+                -Mode 'hermes'
+            }
+          }
+
+          if ($aiAgentChoice -in @('openclaw', 'both', 'all')) {
+            Invoke-OptionalInstall 'OpenClaw' {
+              Install-OfficialPowerShellApp `
+                -Name 'OpenClaw' `
+                -Uri 'https://openclaw.ai/install.ps1' `
+                -Mode 'openclaw'
+            }
+          }
+
+          if ($aiAgentChoice -in @('opencode', 'all')) {
+            Invoke-OptionalInstall 'OpenCode' {
+              Install-NpmGlobalPackage -PackageName 'opencode-ai'
+            }
+          }
+
+          # ArtCraft is optional and disabled by default.
+          if ($installArtCraft) {
+            Invoke-OptionalInstall 'ArtCraft' {
+              Install-ArtCraft
+            }
+          }
           # IDE extensions: Codex + Office Viewer
           $editorExtensions = @(
             @{ Id = "OpenAI.chatgpt"; Name = "Codex / ChatGPT by OpenAI" },
@@ -1015,9 +1379,18 @@ jobs:
           Write-Host "Apps may be installed under runneradmin/user scope. Shortcuts below are published through Public Desktop and the common Start Menu so they appear when logging in as $env:RDP_USER."
 
           $ideChoice = '${{ inputs.ide_choice }}'
-          $installCapCut = '${{ inputs.install_capcut }}'
+          $editorChoice = '${{ inputs.editor_choice }}'
+          $metatraderChoice = '${{ inputs.metatrader_choice }}'
+          $routerChoice = '${{ inputs.router_choice }}'
+          $codingAgentChoice = '${{ inputs.coding_agent_choice }}'
+          $aiAgentChoice = '${{ inputs.ai_agent_choice }}'
+          $installArtCraft = '${{ inputs.install_artcraft }}' -eq 'true'
+
           $wantedVSCode = $ideChoice -in @("vscode", "both")
           $wantedAntigravity = $ideChoice -in @("antigravity", "both")
+          $wantedCapCut = $editorChoice -in @("capcut", "both")
+          $wantedShotcut = $editorChoice -in @("shotcut", "both")
+          $wantedOpenCode = $aiAgentChoice -in @("opencode", "all")
 
           $publicDesktop = Join-Path $env:PUBLIC "Desktop"
           $commonStartMenu = Join-Path $env:ProgramData "Microsoft\Windows\Start Menu\Programs"
@@ -1218,6 +1591,84 @@ jobs:
             ) `
             -ExecutableNames @("CapCut.exe")
 
+          $shotcutTarget = Resolve-AppTarget `
+            -CandidatePaths @(
+              "$env:ProgramFiles\Shotcut\shotcut.exe",
+              "${env:ProgramFiles(x86)}\Shotcut\shotcut.exe",
+              "$env:LOCALAPPDATA\Programs\Shotcut\shotcut.exe"
+            ) `
+            -SearchRoots @(
+              "$env:ProgramFiles\Shotcut",
+              "${env:ProgramFiles(x86)}\Shotcut",
+              "$env:LOCALAPPDATA\Programs\Shotcut"
+            ) `
+            -ExecutableNames @("shotcut.exe")
+
+          $mt4Target = Resolve-AppTarget `
+            -CandidatePaths @(
+              "$env:ProgramFiles\MetaTrader 4\terminal.exe",
+              "${env:ProgramFiles(x86)}\MetaTrader 4\terminal.exe"
+            ) `
+            -SearchRoots @(
+              "$env:ProgramFiles\MetaTrader 4",
+              "${env:ProgramFiles(x86)}\MetaTrader 4"
+            ) `
+            -ExecutableNames @("terminal.exe")
+
+          $mt5Target = Resolve-AppTarget `
+            -CandidatePaths @(
+              "$env:ProgramFiles\MetaTrader 5\terminal64.exe",
+              "$env:ProgramFiles\MetaTrader 5\terminal.exe",
+              "${env:ProgramFiles(x86)}\MetaTrader 5\terminal.exe"
+            ) `
+            -SearchRoots @(
+              "$env:ProgramFiles\MetaTrader 5",
+              "${env:ProgramFiles(x86)}\MetaTrader 5"
+            ) `
+            -ExecutableNames @("terminal64.exe", "terminal.exe")
+
+          $claudeTarget = Resolve-AppTarget `
+            -CandidatePaths @(
+              "$env:USERPROFILE\.local\bin\claude.exe",
+              "$env:USERPROFILE\.local\bin\claude.cmd",
+              "$runnerRoamingNpm\claude.cmd"
+            ) `
+            -SearchRoots @(
+              "$env:USERPROFILE\.local\bin",
+              $runnerRoamingNpm
+            ) `
+            -ExecutableNames @("claude.exe", "claude.cmd", "claude.ps1")
+
+          $hermesTarget = Resolve-AppTarget `
+            -CandidatePaths @(
+              "$env:LOCALAPPDATA\hermes\bin\hermes.exe",
+              "$env:LOCALAPPDATA\hermes\bin\hermes.cmd"
+            ) `
+            -SearchRoots @("$env:LOCALAPPDATA\hermes\bin") `
+            -ExecutableNames @("hermes.exe", "hermes.cmd")
+
+          $openclawTarget = Resolve-AppTarget `
+            -CandidatePaths @("$runnerRoamingNpm\openclaw.cmd") `
+            -SearchRoots @($runnerRoamingNpm) `
+            -ExecutableNames @("openclaw.cmd", "openclaw.ps1")
+
+          $openCodeTarget = Resolve-AppTarget `
+            -CandidatePaths @("$runnerRoamingNpm\opencode.cmd") `
+            -SearchRoots @($runnerRoamingNpm) `
+            -ExecutableNames @("opencode.cmd", "opencode.ps1")
+
+          $omniRouteTarget = Resolve-AppTarget `
+            -CandidatePaths @("$runnerRoamingNpm\omniroute.cmd") `
+            -SearchRoots @($runnerRoamingNpm) `
+            -ExecutableNames @("omniroute.cmd", "omniroute.ps1")
+
+          $artCraftTarget = $env:ARTCRAFT_EXE
+          if (-not $artCraftTarget -or -not (Test-Path $artCraftTarget)) {
+            $artCraftTarget = Resolve-AppTarget `
+              -SearchRoots @("$env:ProgramData\RDP-Setup\ArtCraft") `
+              -ExecutableNames @("artcraft.exe", "ArtCraft.exe", "artcraft-native.exe")
+          }
+
           New-AppShortcut -Name "Google Chrome" -TargetPath $chromeTarget
           New-AppShortcut -Name "WinRAR" -TargetPath $winrarTarget
 
@@ -1242,23 +1693,93 @@ jobs:
             New-AppShortcut -Name "Node.js Command Prompt" -TargetPath "$env:SystemRoot\System32\cmd.exe" -Arguments "/k `"$nodeTarget`" --version"
           }
 
-          if ($codexTarget) {
-            New-AppShortcut -Name "Codex CLI" -TargetPath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Arguments "-NoExit -ExecutionPolicy Bypass -Command `"& '$codexTarget'`"" -IconLocation "$env:SystemRoot\System32\shell32.dll,220" -WorkingDirectory $env:USERPROFILE
-          } else {
-            New-AppShortcut -Name "Codex CLI" -TargetPath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Arguments "-NoExit -ExecutionPolicy Bypass -Command `"codex`"" -IconLocation "$env:SystemRoot\System32\shell32.dll,220" -WorkingDirectory $env:USERPROFILE
+          $powershellTarget = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+
+          if ($codingAgentChoice -in @("codex", "both")) {
+            if ($codexTarget) {
+              New-AppShortcut -Name "Codex CLI" -TargetPath $powershellTarget -Arguments "-NoExit -ExecutionPolicy Bypass -Command `"& '$codexTarget'`"" -IconLocation "$env:SystemRoot\System32\shell32.dll,220" -WorkingDirectory $env:USERPROFILE
+            } else {
+              Write-Warning "Codex CLI was selected but its executable was not found; shortcut skipped."
+            }
           }
 
-          if ($nineRouterTarget) {
-            New-AppShortcut -Name "9Router" -TargetPath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Arguments "-NoExit -ExecutionPolicy Bypass -Command `"& '$nineRouterTarget'`""
+          if ($codingAgentChoice -in @("claude", "both")) {
+            if ($claudeTarget) {
+              New-AppShortcut -Name "Claude Code" -TargetPath $powershellTarget -Arguments "-NoExit -ExecutionPolicy Bypass -Command `"& '$claudeTarget'`"" -WorkingDirectory $env:USERPROFILE
+            } else {
+              Write-Warning "Claude Code was selected but its executable was not found; shortcut skipped."
+            }
           }
 
-          if ($installCapCut -eq "yes") {
+          if ($routerChoice -in @("9router", "both")) {
+            if ($nineRouterTarget) {
+              New-AppShortcut -Name "9Router" -TargetPath $powershellTarget -Arguments "-NoExit -ExecutionPolicy Bypass -Command `"& '$nineRouterTarget'`"" -WorkingDirectory $env:USERPROFILE
+            } else {
+              Write-Warning "9Router was selected but its executable was not found; shortcut skipped."
+            }
+          }
+
+          if ($routerChoice -in @("omniroute", "both")) {
+            if ($omniRouteTarget) {
+              New-AppShortcut -Name "OmniRoute" -TargetPath $powershellTarget -Arguments "-NoExit -ExecutionPolicy Bypass -Command `"& '$omniRouteTarget'`"" -WorkingDirectory $env:USERPROFILE
+            } else {
+              Write-Warning "OmniRoute was selected but its executable was not found; shortcut skipped."
+            }
+          }
+
+          if ($aiAgentChoice -in @("hermes", "both", "all")) {
+            if ($hermesTarget) {
+              New-AppShortcut -Name "Hermes Agent" -TargetPath $powershellTarget -Arguments "-NoExit -ExecutionPolicy Bypass -Command `"& '$hermesTarget'`"" -WorkingDirectory $env:USERPROFILE
+            } else {
+              Write-Warning "Hermes Agent was selected but its executable was not found; shortcut skipped."
+            }
+          }
+
+          if ($aiAgentChoice -in @("openclaw", "both", "all")) {
+            if ($openclawTarget) {
+              New-AppShortcut -Name "OpenClaw" -TargetPath $powershellTarget -Arguments "-NoExit -ExecutionPolicy Bypass -Command `"& '$openclawTarget'`"" -WorkingDirectory $env:USERPROFILE
+            } else {
+              Write-Warning "OpenClaw was selected but its executable was not found; shortcut skipped."
+            }
+          }
+
+          if ($wantedOpenCode) {
+            if ($openCodeTarget) {
+              New-AppShortcut -Name "OpenCode" -TargetPath $powershellTarget -Arguments "-NoExit -ExecutionPolicy Bypass -Command `"& '$openCodeTarget'`"" -WorkingDirectory $env:USERPROFILE
+            } else {
+              Write-Warning "OpenCode was selected but its executable was not found; shortcut skipped."
+            }
+          }
+
+          if ($metatraderChoice -in @("mt4", "both")) {
+            if ($mt4Target) {
+              New-AppShortcut -Name "MetaTrader 4" -TargetPath $mt4Target
+            } else {
+              Write-Warning "MetaTrader 4 was selected but terminal.exe was not found; shortcut skipped."
+            }
+          }
+
+          if ($metatraderChoice -in @("mt5", "both")) {
+            if ($mt5Target) {
+              New-AppShortcut -Name "MetaTrader 5" -TargetPath $mt5Target
+            } else {
+              Write-Warning "MetaTrader 5 was selected but terminal.exe was not found; shortcut skipped."
+            }
+          }
+
+          if ($wantedCapCut) {
             New-AppShortcut -Name "CapCut" -TargetPath $capCutTarget
-          } else {
-            Write-Host "Skipping CapCut shortcut because install_capcut=$installCapCut"
           }
 
-          Write-Host "✅ Shortcut publishing completed"
+          if ($wantedShotcut) {
+            New-AppShortcut -Name "Shotcut" -TargetPath $shotcutTarget
+          }
+
+          if ($installArtCraft) {
+            New-AppShortcut -Name "ArtCraft" -TargetPath $artCraftTarget
+          }
+
+          Write-Host "Shortcut publishing completed."
 
       - name: 🐾 Install Tailscale
         shell: pwsh
@@ -1325,10 +1846,13 @@ jobs:
 
       - name: 🌐 Connect Tailscale
         shell: pwsh
+        env:
+          TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
+          TAILSCALE_HOSTNAME_INPUT: ${{ inputs.tailscale_hostname }}
         run: |
           Write-Host "Checking Tailscale auth key..."
 
-          if ([string]::IsNullOrWhiteSpace("${{ secrets.TAILSCALE_AUTH_KEY }}")) {
+          if ([string]::IsNullOrWhiteSpace($env:TAILSCALE_AUTH_KEY)) {
             Write-Error "❌ Secret TAILSCALE_AUTH_KEY belum diset di GitHub Repository Secrets"
             exit 1
           }
@@ -1340,7 +1864,7 @@ jobs:
             exit 1
           }
 
-          $hostnameBase = '${{ inputs.tailscale_hostname }}'
+          $hostnameBase = [string]$env:TAILSCALE_HOSTNAME_INPUT
           $hostnameMode = '${{ inputs.hostname_mode }}'
 
           if ([string]::IsNullOrWhiteSpace($hostnameBase)) {
@@ -1377,7 +1901,7 @@ jobs:
           Write-Host "Tailscale hostname : $tsHostname"
 
           & $tsExe up `
-            --authkey="${{ secrets.TAILSCALE_AUTH_KEY }}" `
+            --authkey="$env:TAILSCALE_AUTH_KEY" `
             --hostname="$tsHostname" `
             --unattended `
             --accept-routes
@@ -1392,7 +1916,8 @@ jobs:
 
           while (-not $tsIP -and $retry -lt 20) {
             Start-Sleep -Seconds 5
-            $tsIP = (& $tsExe ip -4 2>$null).Trim()
+            $tsIP = [string](& $tsExe ip -4 2>$null)
+            $tsIP = $tsIP.Trim()
             $retry++
             Write-Host "Waiting for Tailscale IP... attempt $retry"
           }
@@ -1431,7 +1956,12 @@ jobs:
         shell: pwsh
         run: |
           $ideChoice = '${{ inputs.ide_choice }}'
-          $installCapCut = '${{ inputs.install_capcut }}'
+          $editorChoice = '${{ inputs.editor_choice }}'
+          $metatraderChoice = '${{ inputs.metatrader_choice }}'
+          $routerChoice = '${{ inputs.router_choice }}'
+          $codingAgentChoice = '${{ inputs.coding_agent_choice }}'
+          $aiAgentChoice = '${{ inputs.ai_agent_choice }}'
+          $installArtCraft = '${{ inputs.install_artcraft }}' -eq 'true'
           $hostnameMode = '${{ inputs.hostname_mode }}'
           $passwordMode = '${{ inputs.rdp_password_mode }}'
           $durationHours = '${{ inputs.duration_hours }}'
@@ -1495,7 +2025,17 @@ jobs:
 
           $wantedVSCode = $ideChoice -in @("vscode", "both")
           $wantedAntigravity = $ideChoice -in @("antigravity", "both")
-          $wantedCapCut = $installCapCut -eq "yes"
+          $wantedCapCut = $editorChoice -in @("capcut", "both")
+          $wantedShotcut = $editorChoice -in @("shotcut", "both")
+          $wantedMT4 = $metatraderChoice -in @("mt4", "both")
+          $wantedMT5 = $metatraderChoice -in @("mt5", "both")
+          $wanted9Router = $routerChoice -in @("9router", "both")
+          $wantedOmniRoute = $routerChoice -in @("omniroute", "both")
+          $wantedCodex = $codingAgentChoice -in @("codex", "both")
+          $wantedClaude = $codingAgentChoice -in @("claude", "both")
+          $wantedHermes = $aiAgentChoice -in @("hermes", "both", "all")
+          $wantedOpenClaw = $aiAgentChoice -in @("openclaw", "both", "all")
+          $wantedOpenCode = $aiAgentChoice -in @("opencode", "all")
 
           $chromeDetected = Test-AnyPath @(
             "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
@@ -1534,10 +2074,33 @@ jobs:
             "$env:LOCALAPPDATA\Programs\CapCut\CapCut.exe"
           )
 
+          $shotcutDetected = Test-AnyPath @(
+            "$env:ProgramFiles\Shotcut\shotcut.exe",
+            "${env:ProgramFiles(x86)}\Shotcut\shotcut.exe",
+            "$env:LOCALAPPDATA\Programs\Shotcut\shotcut.exe"
+          )
+
+          $mt4Detected = Test-AnyPath @(
+            "$env:ProgramFiles\MetaTrader 4\terminal.exe",
+            "${env:ProgramFiles(x86)}\MetaTrader 4\terminal.exe"
+          )
+
+          $mt5Detected = Test-AnyPath @(
+            "$env:ProgramFiles\MetaTrader 5\terminal64.exe",
+            "$env:ProgramFiles\MetaTrader 5\terminal.exe",
+            "${env:ProgramFiles(x86)}\MetaTrader 5\terminal.exe"
+          )
+
           $codexDetected = (Test-CommandExists "codex") -or (Test-AnyPath @(
             "$env:APPDATA\npm\codex.cmd",
             "$env:ProgramFiles\nodejs\codex.cmd",
             "${env:ProgramFiles(x86)}\nodejs\codex.cmd"
+          ))
+
+          $claudeDetected = (Test-CommandExists "claude") -or (Test-AnyPath @(
+            "$env:USERPROFILE\.local\bin\claude.exe",
+            "$env:USERPROFILE\.local\bin\claude.cmd",
+            "$env:APPDATA\npm\claude.cmd"
           ))
 
           $nineRouterDetected = (Test-CommandExists "9router") -or (Test-AnyPath @(
@@ -1546,18 +2109,64 @@ jobs:
             "${env:ProgramFiles(x86)}\nodejs\9router.cmd"
           ))
 
+          $omniRouteDetected = (Test-CommandExists "omniroute") -or (Test-AnyPath @(
+            "$env:APPDATA\npm\omniroute.cmd",
+            "$env:ProgramFiles\nodejs\omniroute.cmd",
+            "${env:ProgramFiles(x86)}\nodejs\omniroute.cmd"
+          ))
+
+          $hermesDetected = (Test-CommandExists "hermes") -or (Test-AnyPath @(
+            "$env:LOCALAPPDATA\hermes\bin\hermes.exe",
+            "$env:LOCALAPPDATA\hermes\bin\hermes.cmd"
+          ))
+
+          $openclawDetected = (Test-CommandExists "openclaw") -or (Test-AnyPath @(
+            "$env:APPDATA\npm\openclaw.cmd",
+            "$env:ProgramFiles\nodejs\openclaw.cmd",
+            "${env:ProgramFiles(x86)}\nodejs\openclaw.cmd"
+          ))
+
+          $openCodeDetected = (Test-CommandExists "opencode") -or (Test-AnyPath @(
+            "$env:APPDATA\npm\opencode.cmd",
+            "$env:ProgramFiles\nodejs\opencode.cmd",
+            "${env:ProgramFiles(x86)}\nodejs\opencode.cmd"
+          ))
+
+          $artCraftDetected = (Test-AnyPath @(
+            "$env:ProgramData\RDP-Setup\ArtCraft\artcraft.exe",
+            "$env:ProgramData\RDP-Setup\ArtCraft\ArtCraft.exe",
+            "$env:ProgramData\RDP-Setup\ArtCraft\artcraft-native.exe"
+          )) -or (Test-AnyPath @($env:ARTCRAFT_EXE))
+
+          $chromeDefaultPolicy = $false
+          try {
+            $policy = Get-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\System' -Name 'DefaultAssociationsConfiguration' -ErrorAction Stop
+            $chromeDefaultPolicy = [bool]$policy.DefaultAssociationsConfiguration
+          } catch {
+            $chromeDefaultPolicy = $false
+          }
+
           $appRows = [System.Collections.Generic.List[string]]::new()
           $appRows.Add("| Application | Status | Notes |") | Out-Null
           $appRows.Add("|---|---:|---|") | Out-Null
 
-          Add-Row $appRows "Google Chrome" (Get-InstallStatus $true $chromeDetected) "Browser utama"
+          Add-Row $appRows "Google Chrome" (Get-InstallStatus $true $chromeDetected) "Installed; default association policy: $chromeDefaultPolicy"
           Add-Row $appRows "WinRAR" (Get-InstallStatus $true $winrarDetected) "Archive manager"
-          Add-Row $appRows "Node.js LTS" (Get-InstallStatus $true $nodeDetected) "Runtime untuk npm"
-          Add-Row $appRows "Codex CLI" (Get-InstallStatus $true $codexDetected) "Install via npm ``@openai/codex``"
-          Add-Row $appRows "9Router CLI" (Get-InstallStatus $true $nineRouterDetected) "Install via npm ``9router``"
-          Add-Row $appRows "Visual Studio Code" (Get-InstallStatus $wantedVSCode $vscodeDetected) "Machine-wide install"
-          Add-Row $appRows "Antigravity IDE" (Get-InstallStatus $wantedAntigravity $antigravityDetected) "Prepared for RDP user"
-          Add-Row $appRows "CapCut" (Get-InstallStatus $wantedCapCut $capCutDetected) "Optional"
+          Add-Row $appRows "Node.js LTS" (Get-InstallStatus $true $nodeDetected) "Runtime for npm-based apps"
+          Add-Row $appRows "Visual Studio Code" (Get-InstallStatus $wantedVSCode $vscodeDetected) "Optional IDE"
+          Add-Row $appRows "Antigravity IDE" (Get-InstallStatus $wantedAntigravity $antigravityDetected) "Optional IDE; prepared for RDP user"
+          Add-Row $appRows "CapCut" (Get-InstallStatus $wantedCapCut $capCutDetected) "Optional video editor"
+          Add-Row $appRows "Shotcut" (Get-InstallStatus $wantedShotcut $shotcutDetected) "Optional video editor"
+          Add-Row $appRows "MetaTrader 4" (Get-InstallStatus $wantedMT4 $mt4Detected) "Optional trading terminal"
+          Add-Row $appRows "MetaTrader 5" (Get-InstallStatus $wantedMT5 $mt5Detected) "Optional trading terminal"
+          Add-Row $appRows "Codex CLI" (Get-InstallStatus $wantedCodex $codexDetected) "npm package ``@openai/codex``"
+          Add-Row $appRows "Claude Code" (Get-InstallStatus $wantedClaude $claudeDetected) "Official PowerShell installer"
+          Add-Row $appRows "9Router CLI" (Get-InstallStatus $wanted9Router $nineRouterDetected) "npm package ``9router``"
+          Add-Row $appRows "OmniRoute CLI" (Get-InstallStatus $wantedOmniRoute $omniRouteDetected) "npm package ``omniroute``"
+          Add-Row $appRows "Hermes Agent" (Get-InstallStatus $wantedHermes $hermesDetected) "Official non-interactive installer"
+          Add-Row $appRows "OpenClaw" (Get-InstallStatus $wantedOpenClaw $openclawDetected) "Official installer; onboarding skipped"
+          Add-Row $appRows "OpenCode" (Get-InstallStatus $wantedOpenCode $openCodeDetected) "npm package ``opencode-ai``"
+          Add-Row $appRows "ArtCraft" (Get-InstallStatus $installArtCraft $artCraftDetected) "Optional GitHub release"
 
           $extensionRows = [System.Collections.Generic.List[string]]::new()
           $extensionRows.Add("| Target | Extension / Feature | Status |") | Out-Null
@@ -1576,7 +2185,9 @@ jobs:
             Add-Row $extensionRows "Antigravity" "OpenAI + Office Viewer extensions" "⏭️ Skipped"
           }
 
-          Add-Row $extensionRows "Chrome" "Cookie-Editor + GoFullPage" "✅ Policy configured"
+          Add-Row $extensionRows "Chrome" "Cookie-Editor + GoFullPage" "Policy configured"
+          $chromePolicyStatus = if ($chromeDefaultPolicy) { "Policy configured" } else { "Check logs" }
+          Add-Row $extensionRows "Windows" "Chrome default browser associations" $chromePolicyStatus
 
           $summaryLines = [System.Collections.Generic.List[string]]::new()
 
@@ -1606,7 +2217,12 @@ jobs:
           $summaryLines.Add("| Password Mode | ``$passwordMode`` |") | Out-Null
           $summaryLines.Add("| Runtime Duration | ``$durationHours hour(s)`` |") | Out-Null
           $summaryLines.Add("| IDE Choice | ``$ideChoice`` |") | Out-Null
-          $summaryLines.Add("| CapCut Option | ``$installCapCut`` |") | Out-Null
+          $summaryLines.Add("| Video Editor Choice | ``$editorChoice`` |") | Out-Null
+          $summaryLines.Add("| MetaTrader Choice | ``$metatraderChoice`` |") | Out-Null
+          $summaryLines.Add("| Router Choice | ``$routerChoice`` |") | Out-Null
+          $summaryLines.Add("| Coding Agent Choice | ``$codingAgentChoice`` |") | Out-Null
+          $summaryLines.Add("| AI Agent Choice | ``$aiAgentChoice`` |") | Out-Null
+          $summaryLines.Add("| ArtCraft Enabled | ``$installArtCraft`` |") | Out-Null
           $summaryLines.Add("") | Out-Null
 
           $summaryLines.Add("## 📦 App Status") | Out-Null
