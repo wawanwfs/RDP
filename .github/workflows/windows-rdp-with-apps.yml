@@ -304,83 +304,124 @@ jobs:
             Write-Host "Password: $password"
           }
 
-      # Keep each run block below GitHub Actions' 21,000-character limit.
+      # Reuse installed apps; parallelize independent groups, not competing installers.
       - name: 🧰 Prepare App Installation Helpers
         shell: pwsh
         run: |
+          function Test-RdpPackageInstalled {
+            param([string] $Id)
+            # Fast exact locations first; no recursive scan of the whole disk.
+            $paths = switch ($Id) {
+              'Google.Chrome' { @("$env:ProgramFiles\Google\Chrome\Application\chrome.exe", "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe", "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe") }
+              'RARLab.WinRAR' { @("$env:ProgramFiles\WinRAR\WinRAR.exe", "${env:ProgramFiles(x86)}\WinRAR\WinRAR.exe") }
+              'OpenJS.NodeJS.LTS' { @("$env:ProgramFiles\nodejs\node.exe", "${env:ProgramFiles(x86)}\nodejs\node.exe") }
+              'Microsoft.VisualStudioCode' { @("$env:ProgramFiles\Microsoft VS Code\Code.exe", "${env:ProgramFiles(x86)}\Microsoft VS Code\Code.exe", "$env:LOCALAPPDATA\Programs\Microsoft VS Code\Code.exe") }
+              'Google.AntigravityIDE' { @("$env:LOCALAPPDATA\Programs\Antigravity IDE\Antigravity IDE.exe", "$env:ProgramFiles\Antigravity IDE\Antigravity IDE.exe") }
+              '7zip.7zip' { @("$env:ProgramFiles\7-Zip\7z.exe", "${env:ProgramFiles(x86)}\7-Zip\7z.exe") }
+              default { @() }
+            }
+            foreach ($path in $paths) {
+              if (Test-Path -LiteralPath $path -PathType Leaf) { return $true }
+            }
+            if ($Id -eq 'OpenJS.NodeJS.LTS') {
+              return [bool](Get-Command node.exe -ErrorAction SilentlyContinue)
+            }
+            # Installed-program registry is much cheaper than winget list/source refresh.
+            $pattern = switch ($Id) {
+              'Google.Chrome' { '^Google Chrome$' }
+              'RARLab.WinRAR' { '^WinRAR(?:\s|$)' }
+              'Microsoft.VisualStudioCode' { '^Microsoft Visual Studio Code(?:\s|$)' }
+              'Google.AntigravityIDE' { '^Antigravity IDE(?:\s|$)' }
+              'ByteDance.CapCut' { '^CapCut(?:\s|$)' }
+              'Meltytech.Shotcut' { '^Shotcut(?:\s|$)' }
+              '7zip.7zip' { '^7-Zip(?:\s|$)' }
+              default { $null }
+            }
+            if ($pattern) {
+              foreach ($key in @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*', 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*')) {
+                $match = Get-ItemProperty -Path $key -ErrorAction SilentlyContinue |
+                  Where-Object { $_.DisplayName -match $pattern } | Select-Object -First 1
+                if ($match) { return $true }
+              }
+            }
+            return $false
+          }
+
+          function Invoke-BoundedInstaller {
+            param([string] $FilePath, [string[]] $Arguments, [int] $TimeoutSeconds = 300)
+            $logBase = Join-Path $env:TEMP ("rdp-installer-" + [guid]::NewGuid().ToString('N'))
+            $process = Start-Process -FilePath $FilePath -ArgumentList $Arguments -PassThru -NoNewWindow `
+              -RedirectStandardOutput "$logBase.out" -RedirectStandardError "$logBase.err"
+            try {
+              if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+                & taskkill.exe /PID $process.Id /T /F 2>&1 | Out-Host
+                throw "Installer exceeded $TimeoutSeconds seconds; process tree terminated."
+              }
+              $process.WaitForExit()
+              return [int]$process.ExitCode
+            } finally {
+              foreach ($file in @("$logBase.out", "$logBase.err")) {
+                if (Test-Path -LiteralPath $file) {
+                  Get-Content -LiteralPath $file -Tail 60 | Out-Host
+                  Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
+                }
+              }
+              $process.Dispose()
+            }
+          }
+
           function Install-WingetPackage {
             param(
               [Parameter(Mandatory = $true)] [string] $Id,
               [Parameter(Mandatory = $true)] [string] $Name,
               [string[]] $FallbackIds = @(),
               [scriptblock] $FallbackInstaller = $null,
-              [string] $Scope = "",
+              [string] $Scope = '',
               [switch] $Optional
             )
-
-            $packageIds = @($Id) + $FallbackIds
-
-            foreach ($packageId in $packageIds) {
-              $installed = $false
-
-              for ($attempt = 1; $attempt -le 2; $attempt++) {
-                Write-Host "Installing $Name [$packageId], attempt $attempt/2..."
-
-                $installArgs = @(
-                  "install",
-                  "--id", $packageId,
-                  "--exact",
-                  "--source", "winget",
-                  "--silent",
-                  "--accept-package-agreements",
-                  "--accept-source-agreements",
-                  "--disable-interactivity"
-                )
-
-                if (-not [string]::IsNullOrWhiteSpace($Scope)) {
-                  $installArgs += @("--scope", $Scope)
-                }
-
-                & $winget @installArgs
-                $installExitCode = $LASTEXITCODE
-
-                if ($installExitCode -eq 0) {
-                  Write-Host "✅ $Name installed with package ID: $packageId"
-                  $installed = $true
-                  break
-                }
-
-                Write-Warning "Install failed for $packageId with exit code $installExitCode."
-                if ($attempt -lt 2) {
-                  Start-Sleep -Seconds 4
-                }
-              }
-
-              if ($installed) {
+            $clock = [Diagnostics.Stopwatch]::StartNew()
+            # One machine-wide queue also protects the optional ArtCraft/7-Zip worker.
+            $mutex = [Threading.Mutex]::new($false, 'Global\RdpWorkflowWingetInstall')
+            $locked = $false
+            try {
+              if (Test-RdpPackageInstalled $Id) {
+                Write-Host "SKIP $Name : already installed (no download/update)."
                 return $true
               }
-
-              Write-Warning "Both installation attempts failed for $packageId. Trying fallback if available..."
-            }
-
-            if ($FallbackInstaller) {
-              Write-Warning "Trying fallback installer for $Name..."
-              try {
-                & $FallbackInstaller
-                Write-Host "✅ $Name installed via fallback installer"
-                return $true
-              } catch {
-                Write-Warning "Fallback installer failed for ${Name}: $($_.Exception.Message)"
+              try { $locked = $mutex.WaitOne(600000) }
+              catch [Threading.AbandonedMutexException] { $locked = $true }
+              if (-not $locked) { throw "Timed out waiting for installer lock: $Name" }
+              if (Test-RdpPackageInstalled $Id) { return $true }
+              if (-not $winget -or -not (Test-Path -LiteralPath $winget)) {
+                throw "winget.exe unavailable; cannot install missing application $Name."
               }
+              foreach ($packageId in (@($Id) + $FallbackIds)) {
+                $installArgs = @('install', '--id', $packageId, '--exact', '--source', 'winget', '--silent', '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity')
+                if ($Scope) { $installArgs += @('--scope', $Scope) }
+                # One attempt only; use a known alternative instead of repeating a slow failure.
+                $code = Invoke-BoundedInstaller -FilePath $winget -Arguments $installArgs
+                if ($code -in @(0, 3010, 1641) -or (Test-RdpPackageInstalled $Id)) {
+                  Write-Host "OK $Name installed/detected."
+                  return $true
+                }
+                Write-Warning "winget $packageId exited with $code."
+              }
+              # A failed winget command alone is NOT evidence that Chrome is missing.
+              if ($FallbackInstaller -and -not (Test-RdpPackageInstalled $Id)) {
+                Write-Host "Fallback needed: $Name is still missing."
+                & $FallbackInstaller | Out-Host
+                if (-not (Test-RdpPackageInstalled $Id)) { throw "$Name not detected after fallback." }
+                return $true
+              }
+              throw "Unable to install missing application $Name."
+            } catch {
+              if ($Optional) { Write-Warning $_.Exception.Message; return $false }
+              throw
+            } finally {
+              if ($locked) { $mutex.ReleaseMutex() }
+              $mutex.Dispose()
+              Write-Host ("TIME {0}: {1:N1}s" -f $Name, $clock.Elapsed.TotalSeconds)
             }
-
-            if ($Optional) {
-              Write-Warning "⚠️ Failed to install optional app: $Name"
-              return $false
-            }
-
-            Write-Error "❌ Failed to install $Name"
-            exit 1
           }
 
           function Resolve-AppTarget {
@@ -410,7 +451,7 @@ jobs:
                   -Path $expandedRoot `
                   -Filter $exeName `
                   -File `
-                  -Recurse `
+                  -Recurse -Depth 3 `
                   -ErrorAction SilentlyContinue |
                   Select-Object -First 1
 
@@ -445,11 +486,14 @@ jobs:
             )
 
             try {
+              $optionalClock = [Diagnostics.Stopwatch]::StartNew()
               Write-Host "Starting optional installation: $Name"
               & $Action
               Write-Host "Finished optional installation attempt: $Name"
             } catch {
               Write-Warning "Optional installation failed for ${Name}: $($_.Exception.Message)"
+            } finally {
+              Write-Host ("TIME {0}: {1:N1}s" -f $Name, $optionalClock.Elapsed.TotalSeconds)
             }
           }
 
@@ -458,6 +502,17 @@ jobs:
               [Parameter(Mandatory = $true)] [string] $PackageName
             )
 
+            $commandName = switch ($PackageName) {
+              '9router' { '9router' }
+              'omniroute' { 'omniroute' }
+              '@openai/codex' { 'codex' }
+              'opencode-ai' { 'opencode' }
+              default { $null }
+            }
+            if ($commandName -and (Get-Command $commandName -ErrorAction SilentlyContinue)) {
+              Write-Host "SKIP $PackageName : command already available."
+              return
+            }
             if (-not $npm -or -not (Test-Path $npm)) {
               throw "npm.cmd is not available; cannot install $PackageName."
             }
@@ -477,6 +532,12 @@ jobs:
               [string] $Version
             )
 
+            $mutex = [Threading.Mutex]::new($false, 'Global\RdpWorkflowWingetInstall')
+            $locked = $false
+            try {
+              try { $locked = $mutex.WaitOne(600000) }
+              catch [Threading.AbandonedMutexException] { $locked = $true }
+              if (-not $locked) { throw 'Timed out waiting for MetaTrader installer lock.' }
             $installerUrl = if ($Version -eq 'mt4') {
               'https://download.mql5.com/cdn/web/metaquotes.software.corp/mt4/mt4setup.exe'
             } else {
@@ -484,7 +545,7 @@ jobs:
             }
 
             $installerPath = Join-Path $env:TEMP "metatrader-$Version-setup.exe"
-            Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath -UseBasicParsing -ErrorAction Stop
+            Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath -UseBasicParsing -TimeoutSec 120 -ErrorAction Stop
 
             if (-not (Test-Path $installerPath)) {
               throw "MetaTrader $Version installer download did not create a file."
@@ -495,14 +556,18 @@ jobs:
               throw "MetaTrader $Version installer signature is not valid: $($signature.Status)."
             }
 
-            $process = Start-Process -FilePath $installerPath -ArgumentList '/auto' -Wait -PassThru
+            $installerExit = Invoke-BoundedInstaller -FilePath $installerPath -Arguments @('/auto') -TimeoutSeconds 300
             Remove-Item -LiteralPath $installerPath -Force -ErrorAction SilentlyContinue
 
-            if ($process.ExitCode -ne 0) {
-              throw "MetaTrader $Version installer exited with code $($process.ExitCode)."
+            if ($installerExit -ne 0) {
+              throw "MetaTrader $Version installer exited with code $($installerExit)."
             }
 
             Write-Host "MetaTrader $Version installer completed."
+            } finally {
+              if ($locked) { $mutex.ReleaseMutex() }
+              $mutex.Dispose()
+            }
           }
 
           function Install-ArtCraft {
@@ -525,7 +590,7 @@ jobs:
             }
 
             $archivePath = Join-Path $env:TEMP 'artcraft-x64.7z'
-            Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $archivePath -UseBasicParsing -ErrorAction Stop
+            Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $archivePath -UseBasicParsing -TimeoutSec 120 -ErrorAction Stop
 
             $sevenZip = (Get-Command 7z.exe -ErrorAction SilentlyContinue).Source
             if (-not $sevenZip) {
@@ -580,7 +645,17 @@ jobs:
               [string] $Mode = 'plain'
             )
 
-            $response = Invoke-WebRequest -Uri $Uri -UseBasicParsing -ErrorAction Stop
+            $commandName = switch ($Name) {
+              'Claude Code' { 'claude' }
+              'Hermes Agent' { 'hermes' }
+              'OpenClaw' { 'openclaw' }
+              default { $null }
+            }
+            if ($commandName -and (Get-Command $commandName -ErrorAction SilentlyContinue)) {
+              Write-Host "SKIP $Name : command already available."
+              return
+            }
+            $response = Invoke-WebRequest -Uri $Uri -UseBasicParsing -TimeoutSec 120 -ErrorAction Stop
             $scriptText = ([string]$response.Content).TrimStart([char]0xFEFF)
 
             if ([string]::IsNullOrWhiteSpace($scriptText)) {
@@ -661,11 +736,10 @@ jobs:
                 "${env:ProgramFiles(x86)}\Antigravity IDE\Antigravity IDE.exe"
               ) `
               -SearchRoots @(
-                "$env:LOCALAPPDATA\Programs",
-                "$env:LOCALAPPDATA",
-                "C:\Users\runneradmin\AppData\Local\Programs",
-                "$env:ProgramFiles",
-                "${env:ProgramFiles(x86)}"
+                "$env:LOCALAPPDATA\Programs\Antigravity IDE",
+                "$env:LOCALAPPDATA\Antigravity IDE",
+                "$env:ProgramFiles\Antigravity IDE",
+                "${env:ProgramFiles(x86)}\Antigravity IDE"
               ) `
               -ExecutableNames @("Antigravity IDE.exe", "antigravity-ide.exe")
           }
@@ -728,9 +802,11 @@ jobs:
             }
           }
 
-          # Persist function definitions for the next PowerShell step.
+          # Export helper definitions for independent worker processes.
           $helperPath = Join-Path $env:RUNNER_TEMP 'rdp-install-helpers.ps1'
           $helperNames = @(
+            'Test-RdpPackageInstalled',
+            'Invoke-BoundedInstaller',
             'Install-WingetPackage',
             'Resolve-AppTarget',
             'Refresh-InstallerPath',
@@ -745,14 +821,13 @@ jobs:
             'Install-EditorExtension',
             'Register-RdpLogonTask'
           )
-          $helperDefinitions = foreach ($helperName in $helperNames) {
+          $definitions = foreach ($helperName in $helperNames) {
             $definition = (Get-Command -Name $helperName -CommandType Function -ErrorAction Stop).Definition
             "function $helperName {`n$definition`n}"
           }
-          Set-Content -LiteralPath $helperPath -Value ($helperDefinitions -join "`n`n") -Encoding UTF8
-          Write-Host "Installation helpers saved: $helperPath"
+          Set-Content -LiteralPath $helperPath -Value ($definitions -join "`n`n") -Encoding UTF8
 
-      - name: 📦 Install Apps, IDE & Extensions
+      - name: 📦 Install Apps in Parallel (Skip Existing)
         shell: pwsh
         run: |
           Write-Host "==========================================="
@@ -780,41 +855,54 @@ jobs:
           Write-Host "AI agent choice     : $aiAgentChoice"
           Write-Host "Install ArtCraft    : $installArtCraft"
 
-          # Resolve winget path on GitHub Actions Windows runners
+          # Resolve winget only; existing apps do not require source refresh/download.
           $winget = (Get-Command winget.exe -ErrorAction SilentlyContinue).Source
-
           if (-not $winget) {
-            $wingetCandidates = @(
-              "$env:LOCALAPPDATA\Microsoft\WindowsApps\winget.exe"
-            )
-
-            $wingetCandidates += Get-ChildItem `
-              -Path "$env:ProgramFiles\WindowsApps" `
-              -Filter "winget.exe" `
-              -Recurse `
-              -ErrorAction SilentlyContinue |
-              Select-Object -ExpandProperty FullName
-
-            $winget = $wingetCandidates |
-              Where-Object { $_ -and (Test-Path $_) } |
-              Select-Object -First 1
+            $winget = Get-ChildItem -Path "$env:ProgramFiles\WindowsApps\Microsoft.DesktopAppInstaller_*\winget.exe" -File -ErrorAction SilentlyContinue |
+              Sort-Object FullName -Descending | Select-Object -First 1 -ExpandProperty FullName
           }
 
-          if (-not $winget) {
-            Write-Error "❌ winget.exe tidak ditemukan di runner Windows ini"
-            exit 1
-          }
-
-          Write-Host "Using winget: $winget"
-          & $winget source update --disable-interactivity
-
-          # Load functions prepared by the preceding step (steps use separate processes).
           $helperPath = Join-Path $env:RUNNER_TEMP 'rdp-install-helpers.ps1'
-          if (-not (Test-Path -LiteralPath $helperPath)) {
-            throw "Installation helper script was not found: $helperPath"
-          }
+          if (-not (Test-Path -LiteralPath $helperPath)) { throw "Installation helper script missing: $helperPath" }
           . $helperPath
 
+          # Node is a shared prerequisite. Do not let concurrent workers modify npm's store.
+          Install-WingetPackage -Id 'OpenJS.NodeJS.LTS' -Name 'Node.js LTS' | Out-Null
+          Refresh-InstallerPath
+          $config = @{
+            ideChoice = $ideChoice; editorChoice = $editorChoice
+            metatraderChoice = $metatraderChoice; routerChoice = $routerChoice
+            codingAgentChoice = $codingAgentChoice; aiAgentChoice = $aiAgentChoice
+            wantedVSCode = $wantedVSCode; wantedAntigravity = $wantedAntigravity
+            wantedCapCut = $wantedCapCut; wantedShotcut = $wantedShotcut
+            winget = $winget
+          }
+          $tasks = [Collections.Generic.List[object]]::new()
+          function Add-InstallTask {
+            param([string] $Name, [scriptblock] $Action, [bool] $Required = $false)
+            $taskDir = Join-Path $env:RUNNER_TEMP ("rdp-task-" + $Name)
+            New-Item -Path $taskDir -ItemType Directory -Force | Out-Null
+            $job = Start-Job -Name $Name -ArgumentList $helperPath, $config, $Action.ToString(), $taskDir -ScriptBlock {
+              param($Helpers, $Config, $Code, $TaskDir)
+              $ErrorActionPreference = 'Stop'
+              $env:GITHUB_ENV = Join-Path $TaskDir 'env.txt'
+              $env:GITHUB_PATH = Join-Path $TaskDir 'path.txt'
+              Set-Content -LiteralPath (Join-Path $TaskDir 'pid.txt') -Value $PID
+              . $Helpers
+              foreach ($entry in $Config.GetEnumerator()) { Set-Variable -Name $entry.Key -Value $entry.Value }
+              Refresh-InstallerPath
+              $clock = [Diagnostics.Stopwatch]::StartNew()
+              try {
+                & ([scriptblock]::Create($Code)) | Out-Host
+              } finally {
+                Write-Host ("TIME GROUP {0}: {1:N1}s" -f (Split-Path $TaskDir -Leaf), $clock.Elapsed.TotalSeconds)
+              }
+              $global:LASTEXITCODE = 0
+            }
+            $tasks.Add([pscustomobject]@{ Job = $job; Name = $Name; Required = $Required; Dir = $taskDir; Started = [datetime]::UtcNow })
+          }
+
+          Add-InstallTask -Name 'gui' -Required $true -Action {
           # Base applications retained for every run.
           Install-WingetPackage `
             -Id "Google.Chrome" `
@@ -833,26 +921,24 @@ jobs:
                 -Uri $chromeMsiUrl `
                 -OutFile $chromeMsiPath `
                 -UseBasicParsing `
+                -TimeoutSec 120 `
                 -ErrorAction Stop
 
               if (-not (Test-Path $chromeMsiPath)) {
                 throw "Chrome MSI fallback download failed."
               }
 
-              $chromeInstall = Start-Process msiexec.exe `
-                -ArgumentList "/i", "`"$chromeMsiPath`"", "/qn", "/norestart" `
-                -Wait `
-                -PassThru
+              $chromeExit = Invoke-BoundedInstaller -FilePath 'msiexec.exe' `
+                -Arguments @('/i', "`"$chromeMsiPath`"", '/qn', '/norestart') -TimeoutSeconds 300
 
               Remove-Item $chromeMsiPath -Force -ErrorAction SilentlyContinue
 
-              if ($chromeInstall.ExitCode -ne 0) {
-                throw "Chrome MSI fallback install failed with exit code $($chromeInstall.ExitCode)."
+              if ($chromeExit -notin @(0, 3010, 1641)) {
+                throw "Chrome MSI fallback install failed with exit code $chromeExit."
               }
             }
 
           Install-WingetPackage -Id "RARLab.WinRAR" -Name "WinRAR"
-          Install-WingetPackage -Id "OpenJS.NodeJS.LTS" -Name "Node.js LTS"
 
           # Apply Chrome as the default browser for new Windows profiles and through policy.
           Set-ChromeDefaultAssociations
@@ -906,6 +992,23 @@ jobs:
             }
           }
 
+          # MetaTrader installers are fetched from MetaQuotes' official CDN.
+          if ($metatraderChoice -in @('mt4', 'both')) {
+            Invoke-OptionalInstall 'MetaTrader 4' {
+              Install-MetaTrader -Version 'mt4'
+            }
+          }
+
+          if ($metatraderChoice -in @('mt5', 'both')) {
+            Invoke-OptionalInstall 'MetaTrader 5' {
+              Install-MetaTrader -Version 'mt5'
+            }
+          }
+
+          }
+
+          if ($routerChoice -ne 'none' -or $codingAgentChoice -ne 'none' -or $aiAgentChoice -ne 'none') {
+          Add-InstallTask -Name 'cli' -Action {
           # Resolve npm after Node.js installation. Node.js is retained as a base dependency.
           $npm = $null
           $npmCandidates = @(
@@ -924,19 +1027,6 @@ jobs:
           if (-not $npm) {
             Write-Error "npm.cmd was not found after Node.js installation."
             exit 1
-          }
-
-          # MetaTrader installers are fetched from MetaQuotes' official CDN.
-          if ($metatraderChoice -in @('mt4', 'both')) {
-            Invoke-OptionalInstall 'MetaTrader 4' {
-              Install-MetaTrader -Version 'mt4'
-            }
-          }
-
-          if ($metatraderChoice -in @('mt5', 'both')) {
-            Invoke-OptionalInstall 'MetaTrader 5' {
-              Install-MetaTrader -Version 'mt5'
-            }
           }
 
           # AI API routers: default none.
@@ -993,12 +1083,81 @@ jobs:
             }
           }
 
-          # ArtCraft is optional and enabled by default; the workflow input can disable it.
+          }
+          }
+
           if ($installArtCraft) {
-            Invoke-OptionalInstall 'ArtCraft' {
-              Install-ArtCraft
+          Add-InstallTask -Name 'artcraft' -Action {
+          Install-ArtCraft
+          }
+          }
+
+          # Maximum three workers: GUI installers, CLI agents, and portable ArtCraft.
+          # GUI installers remain serial; npm commands remain serial inside the CLI worker.
+          $requiredFailures = [Collections.Generic.List[string]]::new()
+          $pending = [Collections.Generic.List[object]]::new()
+          foreach ($task in $tasks) { $pending.Add($task) }
+          try {
+            while ($pending.Count -gt 0) {
+              foreach ($task in @($pending.ToArray())) {
+                Receive-Job -Job $task.Job -ErrorAction Continue
+                $timedOut = $task.Job.State -in @('Running', 'NotStarted') -and ([datetime]::UtcNow - $task.Started).TotalSeconds -gt 1200
+                if ($timedOut) {
+                  # Kill worker AND descendants, rather than leaving installer processes running.
+                  $pidFile = Join-Path $task.Dir 'pid.txt'
+                  if (Test-Path $pidFile) {
+                    $workerPid = [int](Get-Content $pidFile -Raw).Trim()
+                    & taskkill.exe /PID $workerPid /T /F 2>&1 | Out-Host
+                  }
+                  Stop-Job -Job $task.Job -ErrorAction SilentlyContinue
+                  Write-Warning "Group $($task.Name) exceeded 20 minutes and was terminated."
+                }
+                if ($task.Job.State -notin @('Running', 'NotStarted')) {
+                  Receive-Job -Job $task.Job -ErrorAction Continue
+                  $ok = $task.Job.State -eq 'Completed' -and -not $timedOut
+                  Write-Host "RESULT GROUP $($task.Name): $($task.Job.State)"
+                  if (-not $ok) {
+                    if ($task.Required) { $requiredFailures.Add($task.Name) }
+                    else { Write-Warning "Optional group $($task.Name) failed; see log above." }
+                  }
+                  # Merge command files only after successful completion; no concurrent appends.
+                  if ($ok) {
+                    foreach ($pair in @(@('env.txt', $env:GITHUB_ENV), @('path.txt', $env:GITHUB_PATH))) {
+                      $file = Join-Path $task.Dir $pair[0]
+                      if (Test-Path -LiteralPath $file) {
+                        Get-Content -LiteralPath $file | Add-Content -LiteralPath $pair[1] -Encoding UTF8
+                      }
+                    }
+                  }
+                  Remove-Job -Job $task.Job -Force -ErrorAction SilentlyContinue
+                  $pending.Remove($task) | Out-Null
+                }
+              }
+              if ($pending.Count -gt 0) { Start-Sleep -Seconds 2 }
+            }
+          } finally {
+            foreach ($task in $pending) {
+              $pidFile = Join-Path $task.Dir 'pid.txt'
+              if (Test-Path $pidFile) {
+                $workerPid = [int](Get-Content $pidFile -Raw).Trim()
+                & taskkill.exe /PID $workerPid /T /F 2>&1 | Out-Host
+              }
+              Stop-Job -Job $task.Job -ErrorAction SilentlyContinue
+              Remove-Job -Job $task.Job -Force -ErrorAction SilentlyContinue
             }
           }
+          if ($requiredFailures.Count -gt 0) { throw "Required installation group failed: $($requiredFailures -join ', ')" }
+          Refresh-InstallerPath
+
+
+          $global:LASTEXITCODE = 0
+
+      - name: 🧩 Configure IDE Extensions and Chrome Policy
+        shell: pwsh
+        run: |
+          . (Join-Path $env:RUNNER_TEMP 'rdp-install-helpers.ps1')
+          $wantedVSCode = '${{ inputs.ide_choice }}' -in @('vscode', 'both')
+          $wantedAntigravity = '${{ inputs.ide_choice }}' -in @('antigravity', 'both')
           # IDE extensions: Codex + Office Viewer
           $editorExtensions = @(
             @{ Id = "OpenAI.chatgpt"; Name = "Codex / ChatGPT by OpenAI" },
@@ -1127,11 +1286,10 @@ jobs:
             }
 
             $searchRoots = @(
-              "$env:LOCALAPPDATA\Programs",
-              "$env:LOCALAPPDATA",
-              "C:\Users\runneradmin\AppData\Local\Programs",
-              "$env:ProgramFiles",
-              "${env:ProgramFiles(x86)}"
+              "$env:LOCALAPPDATA\Programs\Antigravity IDE",
+              "$env:LOCALAPPDATA\Antigravity IDE",
+              "$env:ProgramFiles\Antigravity IDE",
+              "${env:ProgramFiles(x86)}\Antigravity IDE"
             )
 
             foreach ($root in $searchRoots) {
@@ -1141,7 +1299,7 @@ jobs:
                 -Path $root `
                 -Include "Antigravity IDE.exe", "antigravity-ide.exe" `
                 -File `
-                -Recurse `
+                -Recurse -Depth 3 `
                 -ErrorAction SilentlyContinue |
                 Select-Object -First 1
 
@@ -1216,6 +1374,8 @@ jobs:
           Write-Host "   - Cookie-Editor"
           Write-Host "   - GoFullPage"
           Write-Host "✅ App and IDE setup completed"
+
+          $global:LASTEXITCODE = 0
 
       - name: 🧬 Prepare Antigravity IDE for RDP User
         if: ${{ inputs.ide_choice == 'antigravity' || inputs.ide_choice == 'both' }}
