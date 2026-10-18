@@ -304,62 +304,10 @@ jobs:
             Write-Host "Password: $password"
           }
 
-      - name: 📦 Install Apps, IDE & Extensions
+      # Keep each run block below GitHub Actions' 21,000-character limit.
+      - name: 🧰 Prepare App Installation Helpers
         shell: pwsh
         run: |
-          Write-Host "==========================================="
-          Write-Host " Installing requested apps, IDE and extensions"
-          Write-Host "==========================================="
-
-          $ideChoice = '${{ inputs.ide_choice }}'
-          $editorChoice = '${{ inputs.editor_choice }}'
-          $metatraderChoice = '${{ inputs.metatrader_choice }}'
-          $routerChoice = '${{ inputs.router_choice }}'
-          $codingAgentChoice = '${{ inputs.coding_agent_choice }}'
-          $aiAgentChoice = '${{ inputs.ai_agent_choice }}'
-          $installArtCraft = '${{ inputs.install_artcraft }}' -eq 'true'
-
-          $wantedVSCode = $ideChoice -in @("vscode", "both")
-          $wantedAntigravity = $ideChoice -in @("antigravity", "both")
-          $wantedCapCut = $editorChoice -in @("capcut", "both")
-          $wantedShotcut = $editorChoice -in @("shotcut", "both")
-
-          Write-Host "IDE choice          : $ideChoice"
-          Write-Host "Video editor choice : $editorChoice"
-          Write-Host "MetaTrader choice   : $metatraderChoice"
-          Write-Host "Router choice       : $routerChoice"
-          Write-Host "Coding agent choice : $codingAgentChoice"
-          Write-Host "AI agent choice     : $aiAgentChoice"
-          Write-Host "Install ArtCraft    : $installArtCraft"
-
-          # Resolve winget path on GitHub Actions Windows runners
-          $winget = (Get-Command winget.exe -ErrorAction SilentlyContinue).Source
-
-          if (-not $winget) {
-            $wingetCandidates = @(
-              "$env:LOCALAPPDATA\Microsoft\WindowsApps\winget.exe"
-            )
-
-            $wingetCandidates += Get-ChildItem `
-              -Path "$env:ProgramFiles\WindowsApps" `
-              -Filter "winget.exe" `
-              -Recurse `
-              -ErrorAction SilentlyContinue |
-              Select-Object -ExpandProperty FullName
-
-            $winget = $wingetCandidates |
-              Where-Object { $_ -and (Test-Path $_) } |
-              Select-Object -First 1
-          }
-
-          if (-not $winget) {
-            Write-Error "❌ winget.exe tidak ditemukan di runner Windows ini"
-            exit 1
-          }
-
-          Write-Host "Using winget: $winget"
-          & $winget source update --disable-interactivity
-
           function Install-WingetPackage {
             param(
               [Parameter(Mandatory = $true)] [string] $Id,
@@ -779,6 +727,93 @@ jobs:
               Write-Warning "Could not register logon task '$TaskName': $($_.Exception.Message)"
             }
           }
+
+          # Persist function definitions for the next PowerShell step.
+          $helperPath = Join-Path $env:RUNNER_TEMP 'rdp-install-helpers.ps1'
+          $helperNames = @(
+            'Install-WingetPackage',
+            'Resolve-AppTarget',
+            'Refresh-InstallerPath',
+            'Invoke-OptionalInstall',
+            'Install-NpmGlobalPackage',
+            'Install-MetaTrader',
+            'Install-ArtCraft',
+            'Install-OfficialPowerShellApp',
+            'Set-ChromeDefaultAssociations',
+            'Resolve-VSCodeCli',
+            'Resolve-AntigravityExecutable',
+            'Install-EditorExtension',
+            'Register-RdpLogonTask'
+          )
+          $helperDefinitions = foreach ($helperName in $helperNames) {
+            $definition = (Get-Command -Name $helperName -CommandType Function -ErrorAction Stop).Definition
+            "function $helperName {`n$definition`n}"
+          }
+          Set-Content -LiteralPath $helperPath -Value ($helperDefinitions -join "`n`n") -Encoding UTF8
+          Write-Host "Installation helpers saved: $helperPath"
+
+      - name: 📦 Install Apps, IDE & Extensions
+        shell: pwsh
+        run: |
+          Write-Host "==========================================="
+          Write-Host " Installing requested apps, IDE and extensions"
+          Write-Host "==========================================="
+
+          $ideChoice = '${{ inputs.ide_choice }}'
+          $editorChoice = '${{ inputs.editor_choice }}'
+          $metatraderChoice = '${{ inputs.metatrader_choice }}'
+          $routerChoice = '${{ inputs.router_choice }}'
+          $codingAgentChoice = '${{ inputs.coding_agent_choice }}'
+          $aiAgentChoice = '${{ inputs.ai_agent_choice }}'
+          $installArtCraft = '${{ inputs.install_artcraft }}' -eq 'true'
+
+          $wantedVSCode = $ideChoice -in @("vscode", "both")
+          $wantedAntigravity = $ideChoice -in @("antigravity", "both")
+          $wantedCapCut = $editorChoice -in @("capcut", "both")
+          $wantedShotcut = $editorChoice -in @("shotcut", "both")
+
+          Write-Host "IDE choice          : $ideChoice"
+          Write-Host "Video editor choice : $editorChoice"
+          Write-Host "MetaTrader choice   : $metatraderChoice"
+          Write-Host "Router choice       : $routerChoice"
+          Write-Host "Coding agent choice : $codingAgentChoice"
+          Write-Host "AI agent choice     : $aiAgentChoice"
+          Write-Host "Install ArtCraft    : $installArtCraft"
+
+          # Resolve winget path on GitHub Actions Windows runners
+          $winget = (Get-Command winget.exe -ErrorAction SilentlyContinue).Source
+
+          if (-not $winget) {
+            $wingetCandidates = @(
+              "$env:LOCALAPPDATA\Microsoft\WindowsApps\winget.exe"
+            )
+
+            $wingetCandidates += Get-ChildItem `
+              -Path "$env:ProgramFiles\WindowsApps" `
+              -Filter "winget.exe" `
+              -Recurse `
+              -ErrorAction SilentlyContinue |
+              Select-Object -ExpandProperty FullName
+
+            $winget = $wingetCandidates |
+              Where-Object { $_ -and (Test-Path $_) } |
+              Select-Object -First 1
+          }
+
+          if (-not $winget) {
+            Write-Error "❌ winget.exe tidak ditemukan di runner Windows ini"
+            exit 1
+          }
+
+          Write-Host "Using winget: $winget"
+          & $winget source update --disable-interactivity
+
+          # Load functions prepared by the preceding step (steps use separate processes).
+          $helperPath = Join-Path $env:RUNNER_TEMP 'rdp-install-helpers.ps1'
+          if (-not (Test-Path -LiteralPath $helperPath)) {
+            throw "Installation helper script was not found: $helperPath"
+          }
+          . $helperPath
 
           # Base applications retained for every run.
           Install-WingetPackage `
