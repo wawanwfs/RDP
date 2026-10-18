@@ -1,4 +1,5 @@
-name: 🪟 Windows RDP with Apps
+name: Windows RDP with Apps
+run-name: Windows RDP with Apps
 
 "on":
   workflow_dispatch:
