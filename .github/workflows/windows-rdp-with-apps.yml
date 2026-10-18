@@ -321,9 +321,177 @@ jobs:
           }
 
       # Reuse installed apps; parallelize independent groups, not competing installers.
-      - name: 🧰 Prepare App Installation Helpers
+      - name: 🛡️ Prepare MSI Policy on Disposable Runner
         shell: pwsh
         run: |
+          Write-Host '🛡️ Checking Windows Installer policy for the disposable GitHub runner...'
+          $policyPath = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer'
+          $policy = Get-ItemProperty -LiteralPath $policyPath -ErrorAction SilentlyContinue
+          Write-Host "🔎 Before: DisableMSI=$($policy.DisableMSI); DisableUserInstalls=$($policy.DisableUserInstalls)"
+          # Never override domain, self-hosted, AppLocker or WDAC policy. These two local
+          # MSI settings apply only to this disposable GitHub-hosted Windows machine.
+          if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted') {
+            throw '❌ Refusing MSI policy changes outside a disposable GitHub-hosted runner.'
+          }
+          $computer = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop
+          if ($computer.PartOfDomain) { throw '❌ Domain-joined host detected: ask the domain administrator to approve installation.' }
+          $backupDir = Join-Path $env:ProgramData 'RDP-Setup'
+          New-Item $backupDir -ItemType Directory -Force | Out-Null
+          @{ DisableMSI = $policy.DisableMSI; DisableUserInstalls = $policy.DisableUserInstalls } |
+            ConvertTo-Json | Set-Content (Join-Path $backupDir 'msi-policy-before.json') -Encoding UTF8
+          New-Item -Path $policyPath -Force | Out-Null
+          # Permit normal MSI installation and per-user packages (the launcher is per-user).
+          # Do NOT enable AlwaysInstallElevated and do NOT disable UAC.
+          New-ItemProperty -LiteralPath $policyPath -Name DisableMSI -PropertyType DWord -Value 0 -Force -ErrorAction Stop | Out-Null
+          New-ItemProperty -LiteralPath $policyPath -Name DisableUserInstalls -PropertyType DWord -Value 0 -Force -ErrorAction Stop | Out-Null
+          $verified = Get-ItemProperty -LiteralPath $policyPath -ErrorAction Stop
+          if ($verified.DisableMSI -ne 0 -or $verified.DisableUserInstalls -ne 0) { throw '❌ Windows Installer policy did not accept the requested local settings.' }
+          $service = Get-Service -Name msiserver -ErrorAction Stop
+          if ($service.StartType -eq 'Disabled') { Set-Service -Name msiserver -StartupType Manual -ErrorAction Stop }
+          Start-Service -Name msiserver -ErrorAction Stop
+          Write-Host '✅ MSI and per-user installs allowed on this temporary runner; UAC and application-control policies unchanged.'
+
+      - name: 🧰 Prepare Installation Helpers (1/2)
+        shell: pwsh
+        run: |
+          function Invoke-RdpUserTask {
+            param([string] $Name, [scriptblock] $Script, [hashtable] $Context = @{}, [int] $TimeoutSeconds = 600)
+            if (-not $env:RDP_PASSWORD) { throw '❌ Missing credentials for RDP user task.' }
+            $id = 'RdpSetup-' + $Name + '-' + [guid]::NewGuid().ToString('N').Substring(0,8)
+            $dir = Join-Path $env:ProgramData "RDP-Setup\UserTasks\$id"
+            New-Item $dir -ItemType Directory -Force | Out-Null
+            $sid = (Get-LocalUser -Name $env:RDP_USER -ErrorAction Stop).SID.Value
+            & icacls.exe $dir /grant "*${sid}:(OI)(CI)M" /Q | Out-Host
+            if ($LASTEXITCODE -ne 0) { throw '❌ Cannot grant access to RDP task files.' }
+            $Context | ConvertTo-Json -Depth 6 | Set-Content (Join-Path $dir 'context.json') -Encoding UTF8
+            $header = @'
+          $ErrorActionPreference = 'Stop'
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          $ctx = Get-Content (Join-Path $PSScriptRoot 'context.json') -Raw | ConvertFrom-Json
+          $env:PATH = [Environment]::GetEnvironmentVariable('PATH','Machine') + ';' + [Environment]::GetEnvironmentVariable('PATH','User')
+          Set-Content (Join-Path $PSScriptRoot 'pid.txt') $PID
+          $result = @{ Success = $false; Data = $null; Message = ''; User = [Security.Principal.WindowsIdentity]::GetCurrent().Name }
+          Start-Transcript (Join-Path $PSScriptRoot 'install.log') -Force | Out-Null
+          try {
+            $principal = [Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
+            if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'RDP task did not receive elevated Administrator privileges.' }
+            Write-Host "🛡️ Running as $($result.User), elevated Administrator"
+            $msiPolicy = Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer' -ErrorAction SilentlyContinue
+            Write-Host "🔎 MSI policy: DisableMSI=$($msiPolicy.DisableMSI), DisableUserInstalls=$($msiPolicy.DisableUserInstalls)"
+            $userPolicy = Get-ItemProperty 'HKCU:\SOFTWARE\Policies\Microsoft\Windows\Installer' -ErrorAction SilentlyContinue
+            Write-Host "🔎 Current-user installer policy: DisableMSI=$($userPolicy.DisableMSI)"
+            $result.Data = & {
+          '@
+            $footer = @'
+            }
+            $result.Success = $true
+          } catch {
+            $result.Message = $_.Exception.Message
+            Write-Host "❌ $($result.Message)"
+          } finally {
+            Stop-Transcript | Out-Null
+            $result | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $PSScriptRoot 'result.tmp') -Encoding UTF8
+            Move-Item (Join-Path $PSScriptRoot 'result.tmp') (Join-Path $PSScriptRoot 'result.json') -Force
+          }
+          if (-not $result.Success) { exit 1 }
+          exit 0
+          '@
+            $file = Join-Path $dir 'run.ps1'
+            # Windows PowerShell 5.1 requires UTF8 BOM for emoji/non-ASCII source.
+            [IO.File]::WriteAllText($file, ($header + "`r`n" + $Script.ToString() + "`r`n" + $footer), [Text.UTF8Encoding]::new($true))
+            $action = New-ScheduledTaskAction -Execute "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$file`"" -WorkingDirectory $dir
+            $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([timespan]::FromSeconds($TimeoutSeconds + 30)) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+            $registered = $false
+            try {
+              Register-ScheduledTask -TaskName $id -Action $action -Settings $settings -User "$env:COMPUTERNAME\$env:RDP_USER" -Password $env:RDP_PASSWORD -RunLevel Highest -Force -ErrorAction Stop | Out-Null
+              $registered = $true
+              Start-ScheduledTask -TaskName $id -ErrorAction Stop
+              $clock = [Diagnostics.Stopwatch]::StartNew()
+              $resultFile = Join-Path $dir 'result.json'
+              while (-not (Test-Path $resultFile)) {
+                if ($clock.Elapsed.TotalSeconds -gt $TimeoutSeconds) { throw "❌ $Name exceeded $TimeoutSeconds seconds. Logs: $dir" }
+                $task = Get-ScheduledTask -TaskName $id -ErrorAction Stop
+                if ($clock.Elapsed.TotalSeconds -gt 10 -and $task.State -eq 'Ready') {
+                  $info = Get-ScheduledTaskInfo -TaskName $id
+                  throw "❌ $Name task stopped without a result (code $($info.LastTaskResult)). Logs: $dir"
+                }
+                Start-Sleep -Seconds 2
+              }
+              $result = Get-Content $resultFile -Raw | ConvertFrom-Json
+              if (-not $result.Success) { throw "❌ $Name failed for RDP: $($result.Message). Logs: $dir" }
+              Write-Host "✅ $Name verified as $($result.User)"
+              return $result.Data
+            } finally {
+              if ($registered) {
+                Stop-ScheduledTask -TaskName $id -ErrorAction SilentlyContinue
+                $pidFile = Join-Path $dir 'pid.txt'
+                if (Test-Path $pidFile) {
+                  $workerPid = [int](Get-Content $pidFile -Raw).Trim()
+                  if (Get-Process -Id $workerPid -ErrorAction SilentlyContinue) { & taskkill.exe /PID $workerPid /T /F 2>&1 | Out-Host }
+                }
+                Unregister-ScheduledTask -TaskName $id -Confirm:$false -ErrorAction SilentlyContinue
+              }
+              $log = Join-Path $dir 'install.log'
+              if (Test-Path $log) { Get-Content $log -Tail 100 | Out-Host }
+              Write-Host "📁 $Name diagnostic files: $dir"
+            }
+          }
+
+          function Install-CapCutForRdp {
+            # Pinned x64 installer and switches from microsoft/winget-pkgs ByteDance.CapCut.
+            $dir = Join-Path $env:ProgramData 'RDP-Setup\CapCut-Installer'
+            New-Item $dir -ItemType Directory -Force | Out-Null
+            $file = Join-Path $dir 'CapCut_9.4.0.4015.exe'
+            $url = 'https://sf16-web-tos-buz.capcutstatic.com/obj/capcut-web-buz-sg/packages/CapCut_9_4_0_4015_capcutpc_0_creatortool.exe'
+            Write-Host '🎬 📥 Downloading CapCut 9.4.0.4015 (per-user installer)...'
+            try {
+              Invoke-WebRequest -Uri $url -OutFile $file -UseBasicParsing -TimeoutSec 300 -ErrorAction Stop
+              if ((Get-FileHash $file -Algorithm SHA256).Hash -ne '8911B37A756AA8741BE8E0489CD1500CF140968CAFA09832C0FB48FAB0188CE3') { throw '❌ CapCut SHA256 mismatch.' }
+              $mutex = [Threading.Mutex]::new($false, 'Global\RdpWorkflowWingetInstall'); $locked = $false
+              try {
+                try { $locked = $mutex.WaitOne(300000) } catch [Threading.AbandonedMutexException] { $locked = $true }
+                if (-not $locked) { throw '❌ CapCut installer queue timeout.' }
+                $data = Invoke-RdpUserTask -Name CapCut -Context @{ Installer = $file } -TimeoutSeconds 600 -Script {
+                  $dest = Join-Path $env:LOCALAPPDATA 'Programs\CapCut'
+                  $found = Get-ChildItem $dest -Filter CapCut.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+                  if (-not $found) {
+                    $p = Start-Process -FilePath $ctx.Installer -ArgumentList @('/silent_install=1', "/install_path=`"$dest`"") -PassThru -Wait
+                    if ($p.ExitCode -notin @(0,3010)) { throw "CapCut installer exit: $($p.ExitCode)" }
+                    for ($i=0; $i -lt 30 -and -not $found; $i++) {
+                      $found = Get-ChildItem $dest -Filter CapCut.exe -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+                      if (-not $found) { Start-Sleep -Seconds 2 }
+                    }
+                  }
+                  if (-not $found) { throw 'CapCut.exe not found in the RDP profile after installation.' }
+                  [pscustomobject]@{ Executable = $found.FullName; Version = $found.VersionInfo.FileVersion }
+                }
+                "CAPCUT_EXE=$($data.Executable)" | Add-Content $env:GITHUB_ENV -Encoding UTF8
+                Write-Host "✅ CapCut binary detected for RDP: $($data.Executable) ($($data.Version))"
+              } finally { if ($locked) { $mutex.ReleaseMutex() }; $mutex.Dispose() }
+            } finally { Remove-Item $file -Force -ErrorAction SilentlyContinue }
+          }
+
+          function Install-ClaudeForRdp {
+            $data = Invoke-RdpUserTask -Name ClaudeCode -TimeoutSeconds 600 -Script {
+              $exe = Join-Path $env:USERPROFILE '.local\bin\claude.exe'
+              if (-not (Test-Path $exe)) {
+                $file = Join-Path $PSScriptRoot 'claude-install.ps1'
+                Invoke-WebRequest 'https://claude.ai/install.ps1' -UseBasicParsing -OutFile $file -TimeoutSec 120 -ErrorAction Stop
+                & "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File $file | Out-Host
+                if ($LASTEXITCODE -ne 0) { throw "Claude native installer exit: $LASTEXITCODE" }
+              }
+              if (-not (Test-Path $exe)) { throw 'Claude native executable not found in RDP profile.' }
+              $version = & $exe --version 2>&1
+              if ($LASTEXITCODE -ne 0) { throw "Claude --version failed: $version" }
+              $bin = Split-Path $exe
+              $userPath = [Environment]::GetEnvironmentVariable('Path','User')
+              if ($bin -notin @($userPath -split ';')) { [Environment]::SetEnvironmentVariable('Path', "$bin;$userPath",'User') }
+              [pscustomobject]@{ Executable = $exe; Version = ($version -join ' ') }
+            }
+            "CLAUDE_EXE=$($data.Executable)" | Add-Content $env:GITHUB_ENV -Encoding UTF8
+            Write-Host "✅ Claude Code --version as RDP: $($data.Version)"
+          }
+
           function Test-RdpPackageInstalled {
             param([string] $Id)
             # Fast exact locations first; no recursive scan of the whole disk.
@@ -509,38 +677,63 @@ jobs:
               & $Action
               Write-Host "🏁 Finished optional installation attempt: $Name"
             } catch {
+              if ($Name -in @('CapCut', 'Codex CLI', 'Claude Code')) { throw }
               Write-Warning "⚠️ Optional installation failed for ${Name}: $($_.Exception.Message)"
             } finally {
               Write-Host ("⏱️ TIME {0}: {1:N1}s" -f $Name, $optionalClock.Elapsed.TotalSeconds)
             }
           }
 
+
+          $helperPath = Join-Path $env:RUNNER_TEMP 'rdp-install-helpers.ps1'
+          $names = @('Invoke-RdpUserTask', 'Install-CapCutForRdp', 'Install-ClaudeForRdp', 'Test-RdpPackageInstalled', 'Invoke-BoundedInstaller', 'Install-WingetPackage', 'Resolve-AppTarget', 'Refresh-InstallerPath', 'Invoke-OptionalInstall')
+          $definitions = foreach ($name in $names) {
+            $definition = (Get-Command $name -CommandType Function -ErrorAction Stop).Definition
+            "function $name {`n$definition`n}"
+          }
+          Set-Content -LiteralPath $helperPath -Value ($definitions -join "`n`n") -Encoding UTF8
+
+      - name: 🧰 Prepare Installation Helpers (2/2)
+        shell: pwsh
+        run: |
           function Install-NpmGlobalPackage {
-            param(
-              [Parameter(Mandatory = $true)] [string] $PackageName
-            )
-
-            $commandName = switch ($PackageName) {
-              '9router' { '9router' }
-              'omniroute' { 'omniroute' }
-              '@openai/codex' { 'codex' }
-              'opencode-ai' { 'opencode' }
-              default { $null }
+            param([Parameter(Mandatory = $true)] [string] $PackageName)
+            $prefix = Join-Path $env:ProgramData 'RDP-Tools\npm'
+            New-Item $prefix -ItemType Directory -Force | Out-Null
+            $command = switch ($PackageName) {
+              '@openai/codex' { 'codex' }; '9router' { '9router' }; 'omniroute' { 'omniroute' }; 'opencode-ai' { 'opencode' }
+              default { throw "Unknown npm executable mapping: $PackageName" }
             }
-            if ($commandName -and (Get-Command $commandName -ErrorAction SilentlyContinue)) {
-              Write-Host "⏭️ SKIP $PackageName : command already available."
-              return
+            if (-not $npm -or -not (Test-Path $npm)) { throw '❌ npm.cmd is not available.' }
+            $exe = Join-Path $prefix "$command.cmd"
+            $working = $false
+            if (Test-Path $exe) {
+              if ($command -eq 'codex') { & $exe --version | Out-Host; $working = $LASTEXITCODE -eq 0 }
+              else { $working = $true }
             }
-            if (-not $npm -or -not (Test-Path $npm)) {
-              throw "❌ npm.cmd is not available; cannot install $PackageName."
+            if (-not $working) {
+              Write-Host "📦 Installing $PackageName in shared RDP-accessible prefix: $prefix"
+              & $npm install --global --prefix $prefix --include=optional --no-audit --no-fund "$PackageName@latest" | Out-Host
+              if ($LASTEXITCODE -ne 0 -or -not (Test-Path $exe)) { throw "❌ npm package failed verification: $PackageName" }
             }
-
-            & $npm install --global "$PackageName@latest"
-            if ($LASTEXITCODE -ne 0) {
-              throw "❌ npm install failed for $PackageName with exit code $LASTEXITCODE."
+            $node = (Get-Command node.exe -ErrorAction Stop).Source
+            $nodeDir = Split-Path $node
+            $machine = [Environment]::GetEnvironmentVariable('Path','Machine')
+            $entries = @($machine -split ';' | Where-Object { $_ })
+            foreach ($entry in @($prefix,$nodeDir)) { if ($entry -notin $entries) { $entries += $entry } }
+            [Environment]::SetEnvironmentVariable('Path', ($entries -join ';'), 'Machine')
+            $env:Path = "$prefix;$nodeDir;" + $env:Path
+            "RDP_NPM_PREFIX=$prefix" | Add-Content $env:GITHUB_ENV -Encoding UTF8
+            $prefix | Add-Content $env:GITHUB_PATH -Encoding UTF8
+            if ($command -eq 'codex') {
+              $data = Invoke-RdpUserTask -Name CodexVersion -TimeoutSeconds 90 -Context @{ Executable = $exe } -Script {
+                $version = & $ctx.Executable --version 2>&1
+                if ($LASTEXITCODE -ne 0) { throw "Codex --version failed for RDP: $version" }
+                [pscustomobject]@{ Executable = $ctx.Executable; Version = ($version -join ' ') }
+              }
+              "CODEX_EXE=$exe" | Add-Content $env:GITHUB_ENV -Encoding UTF8
+              Write-Host "✅ Codex --version as RDP: $($data.Version)"
             }
-
-            Refresh-InstallerPath
           }
 
           function Install-MetaTrader {
@@ -589,63 +782,40 @@ jobs:
           }
 
           function Install-ArtCraft {
-            # 🎨 Pinned official ArtCraft LAUNCHER, not the separate ArtCraft desktop app.
-            $uri = 'https://github.com/storytold/craft-launcher/releases/download/v0.3.2/artcraft-launcher-0.3.2-windows-x64.msi'
-            $sha256 = 'e1d147912aec78b40dfd2f3caf7e8a9fa887a285451cfc221f16a4f3a484065c'
-            $rdpUser = Get-LocalUser -Name $env:RDP_USER -ErrorAction Stop
-            $profileKey = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\$($rdpUser.SID.Value)"
-            $profile = (Get-ItemProperty -LiteralPath $profileKey -ErrorAction SilentlyContinue).ProfileImagePath
-            if (-not $profile) { $profile = "$env:SystemDrive\Users\$env:RDP_USER" }
-            $appExe = Join-Path $profile 'AppData\Local\Programs\ArtCraft Launcher\artcraft-launcher.exe'
-            if (Test-Path -LiteralPath $appExe) {
-              Write-Host "⏭️ SKIP ArtCraft Launcher : already installed for $env:RDP_USER"
-              "ARTCRAFT_EXE=$appExe" | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding UTF8
-              return
-            }
-            # This MSI is per-user. Run it as the RDP user, not runneradmin, so registry,
-            # profile, Start menu and launcher self-updates belong to the correct account.
-            if ([string]::IsNullOrWhiteSpace($env:RDP_PASSWORD)) { throw '❌ RDP password unavailable for per-user launcher setup.' }
-            $setupDir = Join-Path $env:ProgramData 'RDP-Setup\ArtCraft-Launcher-Installer'
-            New-Item -Path $setupDir -ItemType Directory -Force | Out-Null
-            $sid = $rdpUser.SID.Value
-            & icacls.exe $setupDir /grant "*${sid}:(OI)(CI)M" /Q | Out-Host
-            if ($LASTEXITCODE -ne 0) { throw '❌ Cannot grant the RDP account access to launcher setup files.' }
-            $installerPath = Join-Path $setupDir 'artcraft-launcher-0.3.2-windows-x64.msi'
-            $msiLog = Join-Path $setupDir 'install.log'
-            Write-Host '🎨 📥 Downloading ArtCraft Launcher v0.3.2 (Windows x64 MSI)...'
+            $dir = Join-Path $env:ProgramData 'RDP-Setup\ArtCraft-Launcher-Installer'
+            New-Item $dir -ItemType Directory -Force | Out-Null
+            $file = Join-Path $dir 'artcraft-launcher-0.3.2-windows-x64.msi'
             try {
-              Invoke-WebRequest -Uri $uri -OutFile $installerPath -UseBasicParsing -TimeoutSec 180 -ErrorAction Stop
-              if ((Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash -ne $sha256) {
-                throw '❌ ArtCraft Launcher MSI SHA256 mismatch; refusing to install.'
-              }
-              $mutex = [Threading.Mutex]::new($false, 'Global\RdpWorkflowWingetInstall')
-              $locked = $false
+              Write-Host '🎨 📥 Downloading ArtCraft Launcher v0.3.2 MSI...'
+              Invoke-WebRequest -Uri 'https://github.com/storytold/craft-launcher/releases/download/v0.3.2/artcraft-launcher-0.3.2-windows-x64.msi' -OutFile $file -UseBasicParsing -TimeoutSec 180 -ErrorAction Stop
+              if ((Get-FileHash $file -Algorithm SHA256).Hash -ne 'e1d147912aec78b40dfd2f3caf7e8a9fa887a285451cfc221f16a4f3a484065c') { throw '❌ ArtCraft Launcher MSI SHA256 mismatch.' }
+              $mutex = [Threading.Mutex]::new($false, 'Global\RdpWorkflowWingetInstall'); $locked = $false
               try {
-                try { $locked = $mutex.WaitOne(600000) }
-                catch [Threading.AbandonedMutexException] { $locked = $true }
-                if (-not $locked) { throw '❌ Timed out waiting for launcher MSI installer lock.' }
-                Start-Service -Name seclogon -ErrorAction Stop
-                $securePassword = ConvertTo-SecureString $env:RDP_PASSWORD -AsPlainText -Force
-                $credential = [pscredential]::new("$env:COMPUTERNAME\$env:RDP_USER", $securePassword)
-                $msiArguments = @('/i', "`"$installerPath`"", '/qn', '/norestart', 'INSTALLDESKTOPSHORTCUT=1', '/L*v', "`"$msiLog`"")
-                $code = Invoke-BoundedInstaller -FilePath "$env:SystemRoot\System32\msiexec.exe" `
-                  -Arguments $msiArguments -TimeoutSeconds 300 -Credential $credential
-                if ($code -notin @(0, 3010, 1641)) {
-                  if (Test-Path $msiLog) { Get-Content $msiLog -Tail 35 | Out-Host }
-                  throw "❌ ArtCraft Launcher MSI exited with code $code. Log: $msiLog"
+                try { $locked = $mutex.WaitOne(300000) } catch [Threading.AbandonedMutexException] { $locked = $true }
+                if (-not $locked) { throw '❌ ArtCraft installer queue timeout.' }
+                $data = Invoke-RdpUserTask -Name ArtCraft -TimeoutSeconds 450 -Context @{ Installer = $file } -Script {
+                  $exe = Join-Path $env:LOCALAPPDATA 'Programs\ArtCraft Launcher\artcraft-launcher.exe'
+                  if (-not (Test-Path $exe)) {
+                    $log = Join-Path $PSScriptRoot 'msi.log'
+                    $args = @('/i', "`"$($ctx.Installer)`"", '/qn', '/norestart', 'INSTALLDESKTOPSHORTCUT=1', '/L*v', "`"$log`"")
+                    $p = Start-Process "$env:SystemRoot\System32\msiexec.exe" -ArgumentList $args -PassThru -Wait
+                    if ($p.ExitCode -notin @(0,3010,1641)) {
+                      if (Test-Path $log) { Get-Content $log -Tail 40 | Out-Host }
+                      if ($p.ExitCode -eq 1625) {
+                      Write-Host '❌ MSI 1625: installation blocked by policy; inspect the MSI log and effective application-control policies.'
+                      Get-WinEvent -FilterHashtable @{ LogName='Application'; ProviderName='MsiInstaller' } -MaxEvents 5 -ErrorAction SilentlyContinue |
+                        Select-Object TimeCreated, Id, Message | Format-List | Out-Host
+                    }
+                    throw "ArtCraft MSI exit: $($p.ExitCode)"
+                    }
+                  }
+                  if (-not (Test-Path $exe)) { throw 'ArtCraft Launcher executable missing from RDP profile.' }
+                  [pscustomobject]@{ Executable = $exe; Version = (Get-Item $exe).VersionInfo.FileVersion }
                 }
-              } finally {
-                if ($locked) { $mutex.ReleaseMutex() }
-                $mutex.Dispose()
-              }
-              $profile = (Get-ItemProperty -LiteralPath $profileKey -ErrorAction Stop).ProfileImagePath
-              $appExe = Join-Path $profile 'AppData\Local\Programs\ArtCraft Launcher\artcraft-launcher.exe'
-              if (-not (Test-Path -LiteralPath $appExe)) { throw '❌ MSI finished but artcraft-launcher.exe was not found in the RDP profile.' }
-              "ARTCRAFT_EXE=$appExe" | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding UTF8
-              Write-Host "🎨 ✅ OK ArtCraft Launcher installed for $env:RDP_USER : $appExe"
-            } finally {
-              Remove-Item -LiteralPath $installerPath -Force -ErrorAction SilentlyContinue
-            }
+                "ARTCRAFT_EXE=$($data.Executable)" | Add-Content $env:GITHUB_ENV -Encoding UTF8
+                Write-Host "✅ ArtCraft Launcher binary detected for RDP: $($data.Executable)"
+              } finally { if ($locked) { $mutex.ReleaseMutex() }; $mutex.Dispose() }
+            } finally { Remove-Item $file -Force -ErrorAction SilentlyContinue }
           }
 
           function Install-OfficialPowerShellApp {
@@ -813,30 +983,14 @@ jobs:
             }
           }
 
-          # Export helper definitions for independent worker processes.
+
           $helperPath = Join-Path $env:RUNNER_TEMP 'rdp-install-helpers.ps1'
-          $helperNames = @(
-            'Test-RdpPackageInstalled',
-            'Invoke-BoundedInstaller',
-            'Install-WingetPackage',
-            'Resolve-AppTarget',
-            'Refresh-InstallerPath',
-            'Invoke-OptionalInstall',
-            'Install-NpmGlobalPackage',
-            'Install-MetaTrader',
-            'Install-ArtCraft',
-            'Install-OfficialPowerShellApp',
-            'Set-ChromeDefaultAssociations',
-            'Resolve-VSCodeCli',
-            'Resolve-AntigravityExecutable',
-            'Install-EditorExtension',
-            'Register-RdpLogonTask'
-          )
-          $definitions = foreach ($helperName in $helperNames) {
-            $definition = (Get-Command -Name $helperName -CommandType Function -ErrorAction Stop).Definition
-            "function $helperName {`n$definition`n}"
+          $names = @('Install-NpmGlobalPackage', 'Install-MetaTrader', 'Install-ArtCraft', 'Install-OfficialPowerShellApp', 'Set-ChromeDefaultAssociations', 'Resolve-VSCodeCli', 'Resolve-AntigravityExecutable', 'Install-EditorExtension', 'Register-RdpLogonTask')
+          $definitions = foreach ($name in $names) {
+            $definition = (Get-Command $name -CommandType Function -ErrorAction Stop).Definition
+            "function $name {`n$definition`n}"
           }
-          Set-Content -LiteralPath $helperPath -Value ($definitions -join "`n`n") -Encoding UTF8
+          Add-Content -LiteralPath $helperPath -Value ($definitions -join "`n`n") -Encoding UTF8
 
       - name: 📦 Install Apps in Parallel (Skip Existing)
         shell: pwsh
@@ -993,7 +1147,7 @@ jobs:
           # Video editor choice: default none.
           if ($wantedCapCut) {
             Invoke-OptionalInstall 'CapCut' {
-              Install-WingetPackage -Id "ByteDance.CapCut" -Name "CapCut" -Optional | Out-Null
+              Install-CapCutForRdp
             }
           }
 
@@ -1019,7 +1173,7 @@ jobs:
           }
 
           if ($routerChoice -ne 'none' -or $codingAgentChoice -ne 'none' -or $aiAgentChoice -ne 'none') {
-          Add-InstallTask -Name 'cli' -Action {
+          Add-InstallTask -Name 'cli' -Required $true -Action {
           # Resolve npm after Node.js installation. Node.js is retained as a base dependency.
           $npm = $null
           $npmCandidates = @(
@@ -1062,10 +1216,7 @@ jobs:
 
           if ($codingAgentChoice -in @('claude', 'both')) {
             Invoke-OptionalInstall 'Claude Code' {
-              Install-OfficialPowerShellApp `
-                -Name 'Claude Code' `
-                -Uri 'https://claude.ai/install.ps1' `
-                -Mode 'plain'
+              Install-ClaudeForRdp
             }
           }
 
@@ -1098,7 +1249,7 @@ jobs:
           }
 
           if ($installArtCraft) {
-          Add-InstallTask -Name 'artcraft' -Action {
+          Add-InstallTask -Name 'artcraft' -Required $true -Action {
           Install-ArtCraft
           }
           }
@@ -1693,7 +1844,7 @@ jobs:
           }
 
           $runnerLocalPrograms = Join-Path $env:LOCALAPPDATA "Programs"
-          $runnerRoamingNpm = Join-Path $env:APPDATA "npm"
+          $runnerRoamingNpm = Join-Path $env:ProgramData "RDP-Tools\npm"
           $antigravityLauncher = Join-Path $env:ProgramData "RDP-Setup\launch-antigravity-ide.ps1"
 
           $chromeTarget = Resolve-AppTarget `
@@ -1758,17 +1909,7 @@ jobs:
             -ExecutableNames @("node.exe")
 
           $codexTarget = Resolve-AppTarget `
-            -CandidatePaths @(
-              "$runnerRoamingNpm\codex.cmd",
-              "$env:ProgramFiles\nodejs\codex.cmd",
-              "${env:ProgramFiles(x86)}\nodejs\codex.cmd"
-            ) `
-            -SearchRoots @(
-              $runnerRoamingNpm,
-              "$env:ProgramFiles\nodejs",
-              "${env:ProgramFiles(x86)}\nodejs"
-            ) `
-            -ExecutableNames @("codex.cmd", "codex.ps1")
+            -CandidatePaths @($env:CODEX_EXE, "$runnerRoamingNpm\codex.cmd")
 
           $nineRouterTarget = Resolve-AppTarget `
             -CandidatePaths @(
@@ -1784,19 +1925,9 @@ jobs:
             -ExecutableNames @("9router.cmd", "9router.ps1")
 
           $capCutTarget = Resolve-AppTarget `
-            -CandidatePaths @(
-              "$env:ProgramFiles\CapCut\CapCut.exe",
-              "${env:ProgramFiles(x86)}\CapCut\CapCut.exe",
-              "$env:LOCALAPPDATA\CapCut\CapCut.exe",
-              "$env:LOCALAPPDATA\Programs\CapCut\CapCut.exe"
-            ) `
-            -SearchRoots @(
-              "$env:ProgramFiles\CapCut",
-              "${env:ProgramFiles(x86)}\CapCut",
-              "$env:LOCALAPPDATA\CapCut",
-              "$env:LOCALAPPDATA\Programs\CapCut"
-            ) `
-            -ExecutableNames @("CapCut.exe")
+            -CandidatePaths @($env:CAPCUT_EXE) `
+            -SearchRoots @("$rdpProfile\AppData\Local\Programs\CapCut", "$rdpProfile\AppData\Local\CapCut") `
+            -ExecutableNames @('CapCut.exe')
 
           $shotcutTarget = Resolve-AppTarget `
             -CandidatePaths @(
@@ -1835,16 +1966,7 @@ jobs:
             -ExecutableNames @("terminal64.exe", "terminal.exe")
 
           $claudeTarget = Resolve-AppTarget `
-            -CandidatePaths @(
-              "$env:USERPROFILE\.local\bin\claude.exe",
-              "$env:USERPROFILE\.local\bin\claude.cmd",
-              "$runnerRoamingNpm\claude.cmd"
-            ) `
-            -SearchRoots @(
-              "$env:USERPROFILE\.local\bin",
-              $runnerRoamingNpm
-            ) `
-            -ExecutableNames @("claude.exe", "claude.cmd", "claude.ps1")
+            -CandidatePaths @($env:CLAUDE_EXE, "$rdpProfile\.local\bin\claude.exe")
 
           $hermesTarget = Resolve-AppTarget `
             -CandidatePaths @(
@@ -1908,7 +2030,7 @@ jobs:
 
           if ($codingAgentChoice -in @("codex", "both")) {
             if ($codexTarget) {
-              New-AppShortcut -Name "Codex CLI" -TargetPath $powershellTarget -Arguments "-NoExit -ExecutionPolicy Bypass -Command `"& '$codexTarget'`"" -IconLocation "$env:SystemRoot\System32\shell32.dll,220" -WorkingDirectory $env:USERPROFILE
+              New-AppShortcut -Name "Codex CLI" -TargetPath $powershellTarget -Arguments "-NoExit -ExecutionPolicy Bypass -Command `"& '$codexTarget'`"" -IconLocation "$env:SystemRoot\System32\shell32.dll,220" -WorkingDirectory $rdpProfile
             } else {
               Write-Warning "⚠️ Codex CLI was selected but its executable was not found; shortcut skipped."
             }
@@ -1916,7 +2038,7 @@ jobs:
 
           if ($codingAgentChoice -in @("claude", "both")) {
             if ($claudeTarget) {
-              New-AppShortcut -Name "Claude Code" -TargetPath $powershellTarget -Arguments "-NoExit -ExecutionPolicy Bypass -Command `"& '$claudeTarget'`"" -WorkingDirectory $env:USERPROFILE
+              New-AppShortcut -Name "Claude Code" -TargetPath $powershellTarget -Arguments "-NoExit -ExecutionPolicy Bypass -Command `"& '$claudeTarget'`"" -WorkingDirectory $rdpProfile
             } else {
               Write-Warning "⚠️ Claude Code was selected but its executable was not found; shortcut skipped."
             }
@@ -1924,7 +2046,7 @@ jobs:
 
           if ($routerChoice -in @("9router", "both")) {
             if ($nineRouterTarget) {
-              New-AppShortcut -Name "9Router" -TargetPath $powershellTarget -Arguments "-NoExit -ExecutionPolicy Bypass -Command `"& '$nineRouterTarget'`"" -WorkingDirectory $env:USERPROFILE
+              New-AppShortcut -Name "9Router" -TargetPath $powershellTarget -Arguments "-NoExit -ExecutionPolicy Bypass -Command `"& '$nineRouterTarget'`"" -WorkingDirectory $rdpProfile
             } else {
               Write-Warning "⚠️ 9Router was selected but its executable was not found; shortcut skipped."
             }
@@ -1932,7 +2054,7 @@ jobs:
 
           if ($routerChoice -in @("omniroute", "both")) {
             if ($omniRouteTarget) {
-              New-AppShortcut -Name "OmniRoute" -TargetPath $powershellTarget -Arguments "-NoExit -ExecutionPolicy Bypass -Command `"& '$omniRouteTarget'`"" -WorkingDirectory $env:USERPROFILE
+              New-AppShortcut -Name "OmniRoute" -TargetPath $powershellTarget -Arguments "-NoExit -ExecutionPolicy Bypass -Command `"& '$omniRouteTarget'`"" -WorkingDirectory $rdpProfile
             } else {
               Write-Warning "⚠️ OmniRoute was selected but its executable was not found; shortcut skipped."
             }
@@ -1940,7 +2062,7 @@ jobs:
 
           if ($aiAgentChoice -in @("hermes", "both", "all")) {
             if ($hermesTarget) {
-              New-AppShortcut -Name "Hermes Agent" -TargetPath $powershellTarget -Arguments "-NoExit -ExecutionPolicy Bypass -Command `"& '$hermesTarget'`"" -WorkingDirectory $env:USERPROFILE
+              New-AppShortcut -Name "Hermes Agent" -TargetPath $powershellTarget -Arguments "-NoExit -ExecutionPolicy Bypass -Command `"& '$hermesTarget'`"" -WorkingDirectory $rdpProfile
             } else {
               Write-Warning "⚠️ Hermes Agent was selected but its executable was not found; shortcut skipped."
             }
@@ -1948,7 +2070,7 @@ jobs:
 
           if ($aiAgentChoice -in @("openclaw", "both", "all")) {
             if ($openclawTarget) {
-              New-AppShortcut -Name "OpenClaw" -TargetPath $powershellTarget -Arguments "-NoExit -ExecutionPolicy Bypass -Command `"& '$openclawTarget'`"" -WorkingDirectory $env:USERPROFILE
+              New-AppShortcut -Name "OpenClaw" -TargetPath $powershellTarget -Arguments "-NoExit -ExecutionPolicy Bypass -Command `"& '$openclawTarget'`"" -WorkingDirectory $rdpProfile
             } else {
               Write-Warning "⚠️ OpenClaw was selected but its executable was not found; shortcut skipped."
             }
@@ -1956,7 +2078,7 @@ jobs:
 
           if ($wantedOpenCode) {
             if ($openCodeTarget) {
-              New-AppShortcut -Name "OpenCode" -TargetPath $powershellTarget -Arguments "-NoExit -ExecutionPolicy Bypass -Command `"& '$openCodeTarget'`"" -WorkingDirectory $env:USERPROFILE
+              New-AppShortcut -Name "OpenCode" -TargetPath $powershellTarget -Arguments "-NoExit -ExecutionPolicy Bypass -Command `"& '$openCodeTarget'`"" -WorkingDirectory $rdpProfile
             } else {
               Write-Warning "⚠️ OpenCode was selected but its executable was not found; shortcut skipped."
             }
@@ -2278,12 +2400,7 @@ jobs:
             "$env:ProgramData\RDP-Setup\Antigravity IDE\Antigravity IDE.exe"
           )
 
-          $capCutDetected = Test-AnyPath @(
-            "$env:ProgramFiles\CapCut\CapCut.exe",
-            "${env:ProgramFiles(x86)}\CapCut\CapCut.exe",
-            "$env:LOCALAPPDATA\CapCut\CapCut.exe",
-            "$env:LOCALAPPDATA\Programs\CapCut\CapCut.exe"
-          )
+          $capCutDetected = Test-AnyPath @($env:CAPCUT_EXE)
 
           $shotcutDetected = Test-AnyPath @(
             "$env:ProgramFiles\Shotcut\shotcut.exe",
@@ -2302,17 +2419,9 @@ jobs:
             "${env:ProgramFiles(x86)}\MetaTrader 5\terminal.exe"
           )
 
-          $codexDetected = (Test-CommandExists "codex") -or (Test-AnyPath @(
-            "$env:APPDATA\npm\codex.cmd",
-            "$env:ProgramFiles\nodejs\codex.cmd",
-            "${env:ProgramFiles(x86)}\nodejs\codex.cmd"
-          ))
+          $codexDetected = Test-AnyPath @($env:CODEX_EXE)
 
-          $claudeDetected = (Test-CommandExists "claude") -or (Test-AnyPath @(
-            "$env:USERPROFILE\.local\bin\claude.exe",
-            "$env:USERPROFILE\.local\bin\claude.cmd",
-            "$env:APPDATA\npm\claude.cmd"
-          ))
+          $claudeDetected = Test-AnyPath @($env:CLAUDE_EXE)
 
           $nineRouterDetected = (Test-CommandExists "9router") -or (Test-AnyPath @(
             "$env:APPDATA\npm\9router.cmd",
@@ -2365,7 +2474,7 @@ jobs:
           Add-Row $appRows "Node.js LTS" (Get-InstallStatus $true $nodeDetected) "Runtime for npm-based apps"
           Add-Row $appRows "Visual Studio Code" (Get-InstallStatus $wantedVSCode $vscodeDetected) "Optional IDE"
           Add-Row $appRows "Antigravity IDE" (Get-InstallStatus $wantedAntigravity $antigravityDetected) "Optional IDE; prepared for RDP user"
-          Add-Row $appRows "CapCut" (Get-InstallStatus $wantedCapCut $capCutDetected) "Optional video editor"
+          Add-Row $appRows "CapCut" (Get-InstallStatus $wantedCapCut $capCutDetected) "Per-user CapCut; binary checked for RDP"
           Add-Row $appRows "Shotcut" (Get-InstallStatus $wantedShotcut $shotcutDetected) "Optional video editor"
           Add-Row $appRows "MetaTrader 4" (Get-InstallStatus $wantedMT4 $mt4Detected) "Optional trading terminal"
           Add-Row $appRows "MetaTrader 5" (Get-InstallStatus $wantedMT5 $mt5Detected) "Optional trading terminal"
