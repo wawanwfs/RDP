@@ -331,7 +331,7 @@ jobs:
                 Write-Host "✅ $Name installed via fallback installer"
                 return $true
               } catch {
-                Write-Warning "Fallback installer failed for $Name: $($_.Exception.Message)"
+                Write-Warning "Fallback installer failed for ${Name}: $($_.Exception.Message)"
               }
             }
 
