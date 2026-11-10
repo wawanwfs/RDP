@@ -7,6 +7,7 @@
 **Deploy a temporary cloud desktop, choose the apps you need, connect privately, and keep the runner alive for the active session.**
 
 [![Windows Workflow](https://img.shields.io/github/actions/workflow/status/wawanwfs/RDP/windows-remote-workspace-with-apps.yml?branch=main&style=for-the-badge&logo=windows&label=Windows)](https://github.com/wawanwfs/RDP/actions/workflows/windows-remote-workspace-with-apps.yml)
+[![Windows CI](https://img.shields.io/github/actions/workflow/status/wawanwfs/RDP/windows-workspace-checks.yml?branch=main&style=for-the-badge&logo=windows&label=Windows%20CI)](https://github.com/wawanwfs/RDP/actions/workflows/windows-workspace-checks.yml)
 [![Linux CI](https://img.shields.io/github/actions/workflow/status/wawanwfs/RDP/linux-workspace-checks.yml?branch=main&style=for-the-badge&logo=linux&label=Linux%20CI)](https://github.com/wawanwfs/RDP/actions/workflows/linux-workspace-checks.yml)
 [![Remote](https://img.shields.io/badge/Remote-RDP%20%7C%20Web-735DE2?style=for-the-badge)](https://github.com/wawanwfs/RDP/actions)
 [![Tailscale](https://img.shields.io/badge/Network-Tailscale%20Private-242424?style=for-the-badge)](https://tailscale.com/)
@@ -138,6 +139,16 @@ Saat `metatrader_choice=mt4`, `mt5`, atau `both`, workflow memanggil [`linux/ins
 
 Installer bisa berstatus `INSTALLED`, `FAILED`, atau `UNSUPPORTED` per terminal. Bila app opsional gagal, remote tetap disediakan dan penyebabnya tampil di **Actions Summary**. Wine di Alpine tidak didukung oleh tahap ini. Untuk Linux trading terminal terbaik gunakan **Ubuntu**.
 
+### 🪟 Windows MetaTrader — verified installer and interactive recovery
+
+Instalasi Windows sekarang menggunakan **satu script PowerShell yang sama** untuk workflow utama dan CI: [`windows/Install-MetaTrader.ps1`](windows/Install-MetaTrader.ps1). Source MT4 diperoleh dari tautan download Exness, MT5 dari MetaQuotes. Sebelum dieksekusi, **tanda tangan Authenticode** dan sumber installer diverifikasi, lalu installer dijalankan tanpa interaksi jika didukung.
+
+Sukses **hanya** bila terminal yang benar ditemukan di disk: MT4 `terminal.exe` (contoh lokasi CI: `C:\Program Files (x86)\MetaTrader 4 EXNESS\terminal.exe`), MT5 `terminal64.exe` (`C:\Program Files\MetaTrader 5\terminal64.exe`). **Exit code installer bukan satu-satunya penentu hasil**—installer bisa menutup proses induk dengan status nonzero sementara terminal sudah terpasang.
+
+Jika setup otomatis tidak menghasilkan terminal yang benar, script menyalin installer yang sudah diverifikasi ke `C:\ProgramData\WFS-Remote-Workspaces\PendingTrading\` dan membuat shortcut **Install MetaTrader 4 (WFS)** atau **Install MetaTrader 5 (WFS)** di *Public Desktop* untuk dibuka setelah login RDP. Status yang dilaporkan **🟠 Pending Interactive**, **bukan Installed**, sampai pengguna menyelesaikan instalasi. Tidak ada login akun broker atau transaksi otomatis.
+
+**Bukti CI:** [Windows MT4 + MT5 berhasil terpasang dengan file executable terverifikasi](https://github.com/wawanwfs/RDP/actions/runs/42924327969). [Windows verification terbaru](https://github.com/wawanwfs/RDP/actions/workflows/windows-workspace-checks.yml) juga menguji pengamanan fallback. Pengujian ini **tidak** membuktikan keberhasilan logon broker, rendering chart, penggunaan EA, ataupun koneksi dari perangkat eksternal.
+
 ### 📦 Application selection
 
 | Menu | Windows | Linux |
@@ -164,6 +175,7 @@ Installer bisa berstatus `INSTALLED`, `FAILED`, atau `UNSUPPORTED` per terminal.
 
 | Evidence | Kegunaan | Batasan |
 |:--|:--|:--|
+| [Windows CI](https://github.com/wawanwfs/RDP/actions/workflows/windows-workspace-checks.yml) | YAML/PowerShell static checks; signed native MT4/MT5 installer execution, terminal or pending-UI verification | Installer acceptance is not broker/GUI acceptance |
 | [Linux CI](https://github.com/wawanwfs/RDP/actions/workflows/linux-workspace-checks.yml) | Bash syntax, YAML, security assertions, Webtop HTTPS, RDP/Xorg smoke tests | Per-run results can change; check latest HEAD |
 | Default KDE XRDP smoke | Login FreeRDP dan proses KDE X11 | Tidak menjamin setiap GPU/klien remote sama |
 | Debian Xfce smoke | Verifikasi baseline dan kompatibilitas | Tidak membuktikan semua distro/desktop |
