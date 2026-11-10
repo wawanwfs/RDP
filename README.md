@@ -45,7 +45,7 @@ WFS Remote Workspaces menyediakan **dua workflow utama** yang dikelola terpisah 
 | Durasi pilihan | 1 / 3 / 6 jam | 1 / 3 / 6 jam |
 | Batas maksimal GitHub job | **360 menit total**, termasuk instalasi | **360 menit total**, termasuk instalasi |
 | Session persist setelah run berakhir? | Tidak | Tidak |
-| MetaTrader | Installer Windows | **Wine + installer MetaQuotes**, verifikasi binary |
+| MetaTrader | Installer Windows | **Wine + installer publisher/broker resmi**, verifikasi binary |
 | Perangkat untuk mengakses | Windows, Mac, Android/iOS dengan klien remote | Windows, Mac, Android/iOS dengan klien remote |
 
 > [!IMPORTANT]
@@ -128,10 +128,10 @@ Distro native memakai tag [LinuxServer Webtop](https://docs.linuxserver.io/image
 
 ### 📈 MetaTrader installation — no fake success status
 
-Saat `metatrader_choice=mt4`, `mt5`, atau `both`, workflow memanggil [`linux/install-metatrader.sh`](linux/install-metatrader.sh) secara otomatis **setelah desktop XRDP disiapkan**. Script memasang Wine/Xvfb dari repositori distro, mengunduh installer dari CDN MetaQuotes HTTPS, menyiapkan prefix Wine terpisah, mencoba instalasi tanpa interaksi, mencari **terminal MetaTrader yang benar**, lalu membuat launcher dan shortcut bila executable ditemukan.
+Saat `metatrader_choice=mt4`, `mt5`, atau `both`, workflow memanggil [`linux/install-metatrader.sh`](linux/install-metatrader.sh) secara otomatis **setelah desktop XRDP disiapkan**. Script memasang Wine/Xvfb dari repositori distro, mengunduh installer resmi MT5 dari MetaQuotes dan paket MT4 resmi dari Exness melalui HTTPS, menyiapkan prefix Wine terpisah, mencoba instalasi tanpa interaksi, mencari **terminal MetaTrader yang benar**, lalu membuat launcher dan shortcut bila executable ditemukan.
 
 - **MT5:** installer `mt5setup.exe /auto` resmi; hanya dinyatakan `INSTALLED` jika `terminal64.exe` yang benar, launcher, dan shortcut ada.
-- **MT4:** installer MetaQuotes dicoba, tetapi beberapa rilis/tautan MT4 pernah mengarah ke MT5; script **menolak menyatakan MT4 terpasang** ketika executable MT4 tidak terbukti ada. Jika gagal, unduh paket MT4 terkini dari broker resmi di dalam desktop.
+- **MT4:** karena tautan MT4 generik pernah menginstal MT5, pipeline kini menggunakan **paket MT4 dari tautan resmi Exness**. Script menolak sukses jika executable MT4 tidak terbukti. Broker lain dapat digunakan dengan menambahkan server di terminal setelah login; bila gagal gunakan unduhan langsung dari broker tepercaya.
 - **Windows:** MT4/MT5 memakai installer Windows native; tidak memerlukan Wine.
 - **Linux:** Chrome dan ekstensi wajib berada di sistem Linux yang dipilih, sedangkan opsi guest ISO eksperimen memasangnya pada host XRDP, **bukan** otomatis di guest.
 - **Tidak ada** broker login, password akun trading, EA, atau aktivasi auto-trade yang dilakukan oleh workflow. Pemasangan file bukan bukti terminal benar-benar dapat dipakai trading; buka shortcut dan cek koneksi secara manual.
@@ -189,7 +189,7 @@ Status `Remote READY` berarti layanan pada runner telah diperiksa. **Bukan** jam
 | Login sukses tetapi blank/black | Lihat `/home/RDP/.wfs-xrdp-session.log`, hasil smoke desktop terpilih dan paket X11 |
 | KDE tidak tampil / malah Xfce | Pastikan run menggunakan commit terbaru; lihat `WFS_RDP_DESKTOP_READY` di Summary |
 | MetaTrader tidak tampak | Periksa step **Install selected MetaTrader** dan baris `INSTALLED/FAILED` per terminal |
-| MT4 malah MT5 | Gunakan installer MT4 dari broker tepercaya; verifikasi executable `terminal.exe` yang sesuai |
+| MT4 malah MT5 | Verifikasi sumber instalasi broker dan executable `terminal.exe` yang sesuai |
 | NoVNC tidak membuka URL | Pastikan memilih `novnc`/`both`, Tailscale terhubung, baca URL aktual |
 | Tailscale connect timeout | Cek `TAILSCALE_AUTH_KEY`, ACL/grants, status node serta rute tailnet |
 | `RDP`/port tidak terbuka | Uji `Test-NetConnection 100.x.x.x -Port 3389` dari PowerShell |
