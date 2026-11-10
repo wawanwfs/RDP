@@ -2,13 +2,13 @@
 
 # 🐧 WFS Linux Remote Workspace
 
-### RDP · noVNC/Selkies · Both · 20 desktop combinations
+### Ubuntu KDE Plasma (default) · XRDP · Selkies Web · 21 native desktop variants
 
 **Workspace Linux sementara di GitHub Actions: pilihan aplikasi setara menu Windows, koneksi privat Tailscale, dan konfigurasi akun/password yang sama.**
 
 [![Linux CI](https://img.shields.io/github/actions/workflow/status/wawanwfs/RDP/linux-workspace-checks.yml?branch=main&style=for-the-badge&logo=githubactions&label=Linux%20Tests)](https://github.com/wawanwfs/RDP/actions/workflows/linux-workspace-checks.yml)
 [![Tailscale](https://img.shields.io/badge/Tailscale-Private%20Only-242424?style=for-the-badge)](https://tailscale.com/)
-[![Linux](https://img.shields.io/badge/Desktop-20%20Options-168566?style=for-the-badge&logo=linux)](https://docs.linuxserver.io/images/docker-webtop/)
+[![Linux](https://img.shields.io/badge/Desktop-21%20Native%20Options-168566?style=for-the-badge&logo=linux)](https://docs.linuxserver.io/images/docker-webtop/)
 
 [**▶ Jalankan Linux Workspace**](https://github.com/wawanwfs/RDP/actions/workflows/linux-remote-workspace.yml) · [**▶ Windows Workspace**](https://github.com/wawanwfs/RDP/actions/workflows/windows-remote-workspace-with-apps.yml) · [README Root](../README.md)
 
@@ -16,33 +16,23 @@
 
 ---
 
-## 🇮🇩 Mode IGOS Nusantara 26 Ciremai — experimental ISO guest
-
-**Opsi baru:** `distro=igos-nusantara`; pilih **`remote_access=rdp`** (nilai default baru) lalu `desktop=xfce`. Workflow menggunakan Ubuntu Xfce Webtop sebagai **outer XRDP shell** yang men-download dan menjalankan **ISO IGN 26 Beta 6 asli** di QEMU (UEFI/OVMF). Sesi XRDP membuka **VNC viewer fullscreen** ke console VM IGOS melalui `127.0.0.1:5901` di dalam container; port VNC **tidak diteruskan** ke runner/Tailscale/internet. Untuk keluar dari viewer dan mengakses shell XFCE luar, gunakan menu F8 pada TigerVNC atau tutup jendelanya.
-
-**Komponen yang berjalan di mana?** Desktop BAYU, Bayu Store, dan fitur IGOS ada **di VM**, bila boot berhasil. Chrome, Cookie-Editor, GoFullPage, VS Code dan seluruh aplikasi `apps_bundle` yang dipilih terinstal pada **outer Ubuntu shell**, **bukan** otomatis pada IGOS. Default akun XRDP `RDP` kapital dan password `RDP_PASSWORD`; hostname Tailscale `rdp-runner`. Mode `novnc`/`both` untuk IGOS sengaja ditolak hingga tersedia jembatan GUI yang diverifikasi; opsi itu tetap berfungsi pada distro yang lain.
-
-**Penting:** IGN 26 membutuhkan arsitektur x86_64 AVX2, UEFI, RAM minimum 4 GB dan ISO berukuran ~1,2 GB. Runner GitHub sering tidak memiliki `/dev/kvm`; QEMU software emulation berpotensi **sangat lambat/tidak bisa boot desktop Wayland**. Workflow memeriksa proses QEMU dan listener VNC, **tidak mengklaim guest BAYU telah berhasil boot**. ISO diambil melalui HTTPS dari situs resmi, ukurannya diperiksa dan digest unduhan dicatat, tetapi digest itu belum diverifikasi terhadap nilai SHA256 yang ditandatangani penerbit. Jangan simpan data penting pada guest ephemeral.
-
-**Uji di Windows:** hubungkan PC ke tailnet, pilih workflow Linux → Run workflow → `distro=igos-nusantara`, `remote_access=rdp`, `rdp_username=RDP` → ambil alamat `100.x.x.x:3389` pada Actions Summary → jalankan `mstsc` dan login. Jika BAYU belum tampil, lihat `/config/wfs-igos-qemu.log` melalui Xfce luar (atau `docker logs` dari runner) dan catatan Actions. Koneksi yang berhasil ke XRDP **bukan bukti** guest ISO telah boot. Dibanding mode IGN eksperimental, distro Debian Xfce adalah jalur yang lebih stabil untuk remote harian.
-
-Referensi: [IGOS 26 resmi](https://igos-nusantara.or.id/id.html) · [Panduan instalasi IGN 26](https://igos-nusantara.or.id/docs/id/) · [Workflow](../.github/workflows/linux-remote-workspace.yml).
-
 ## 🔥 Fitur dan pilihan GUI
 
-Workflow Linux menggunakan **Ubuntu 24.04 GitHub-hosted runner** sebagai host. Distro yang dipilih dijalankan sebagai **container LinuxServer Webtop**, bukan VM/kernel distro terpisah. UI browser memakai Selkies, sedangkan native RDP memakai **xrdp dengan sesi Xfce tersendiri**.
+Workflow menggunakan **Ubuntu 24.04 GitHub-hosted runner** sebagai host, menjalankan sistem Linux pilihan sebagai **container LinuxServer Webtop tanpa QEMU**. Browser menggunakan Selkies, sedangkan XRDP menggunakan **sesi X11 sesuai desktop yang dipilih** (bukan lagi selalu Xfce).
 
-| Distro | Xfce | MATE | KDE Plasma | i3 |
-|:--|:--:|:--:|:--:|:--:|
-| Debian | ✅ | ✅ | ✅ | ✅ |
-| Ubuntu | ✅ | ✅ | ✅ | ✅ |
-| Fedora | ✅ | ✅ | ✅ | ✅ |
-| Arch Linux | ✅ | ✅ | ✅ | ✅ |
-| Alpine Linux | ✅ | ✅ | ✅ | ✅ |
+**Rekomendasi default: `distro=ubuntu`, `desktop=kde`, `remote_access=rdp`.** Kombinasi ini memasang desktop KDE Plasma pada X11 untuk XRDP dan menggunakan image Webtop Ubuntu KDE untuk desktop web. Keduanya **sesi terpisah**, tetapi berada dalam container yang sama.
 
-Tabel di atas adalah **kombinasi image desktop untuk browser**. Penggunaan native xrdp pada Arch **belum didukung**, karena paketnya berasal dari AUR. Untuk RDP pilih Debian (disarankan), Ubuntu, Fedora, atau Alpine. Xrdp memasang sesi Xfce sendiri walaupun browser memakai desktop lain.
+| Distro | KDE Plasma | Xfce | MATE | i3 | LXQt |
+|:--|:--:|:--:|:--:|:--:|:--:|
+| **Ubuntu (default)** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Debian | ✅ | ✅ | ✅ | ✅ | — |
+| Fedora | ✅ | ✅ | ✅ | ✅ | — |
+| Arch Linux | ✅ | ✅ | ✅ | ✅ | — |
+| Alpine Linux | ✅ | ✅ | ✅ | ✅ | — |
 
-**Rekomendasi:** Debian + Xfce untuk performa yang stabil dan ringan; Ubuntu + Xfce untuk kompatibilitas aplikasi; KDE Plasma untuk UI modern; i3 untuk pengguna yang mengutamakan keyboard.
+Tabel tersebut adalah pilihan **native image Webtop** (21 kombinasi). XRDP Arch belum didukung dan harus menggunakan mode web; KDE Alpine adalah Wayland-only dan juga memerlukan mode web. Penggunaan KDE/MATE/i3/LXQt melalui XRDP membutuhkan paket X11 khusus yang diinstal dan diperiksa, dengan status akhir bergantung pada uji login grafis.
+
+**Rekomendasi:** **Ubuntu + KDE Plasma + XRDP** untuk tampilan modern dan kompatibilitas aplikasi; Debian + Xfce untuk desktop ringan; i3 untuk pengguna keyboard; Ubuntu + LXQt sebagai alternatif ringan.
 
 ## 🖥️ Jenis remote sama dengan Windows
 
@@ -134,7 +124,7 @@ Workflow Linux menampilkan **Dashboard** pada tab **Summary** setiap run aktif d
 
 1. Pastikan Tailscale terpasang pada PC/HP yang akan mengakses runner dan secret `TAILSCALE_AUTH_KEY` telah tersedia.
 2. Buka [Linux Remote Workspace Actions](https://github.com/wawanwfs/RDP/actions/workflows/linux-remote-workspace.yml) → **Run workflow** → branch `main`.
-3. Pilih distro, desktop, `remote_access`, hostname dan mode password. Untuk uji awal gunakan Debian, Xfce, `rdp`, `same_from_secret`, dan tanpa aplikasi tambahan.
+3. Pilih distro, desktop, `remote_access`, hostname dan mode password. Untuk konfigurasi premium gunakan Ubuntu, KDE, `rdp`, `same_from_secret`, dan tanpa aplikasi tambahan.
 4. Tunggu **Publish selected private RDP and/or web endpoints through Tailscale**. Lihat **Actions Summary** untuk IP RDP, URL web, username dan jenis password. Jangan memakai URL runner lama.
 5. Untuk RDP: di Windows tekan `Win + R` → `mstsc` → masukkan `100.x.x.x:3389` → login dengan `rdp_username` dan password RDP. Untuk web: buka URL HTTPS dan login dengan `web_username` dan password VNC.
 
@@ -155,9 +145,9 @@ Instalasi Chrome dan file kebijakan `ExtensionInstallForcelist` diverifikasi saa
 
 ## 🖥️ Perbaikan layar hitam xrdp
 
-Sebelumnya xrdp bisa lolos tes TCP/PAM tetapi menampilkan layar hitam, karena komponen Xfce belum lengkap. Versi terbaru **secara eksplisit memasang `xfwm4` (window manager), `xfdesktop` (desktop/wallpaper), panel, terminal dan DBus**, lalu mengganti `/etc/xrdp/startwm.sh` dengan launcher sesi Xorg/Xfce yang eksplisit.
+Untuk menghindari layar hitam, launcher XRDP sekarang memilih **desktop X11 sesuai `desktop`**, memeriksa executable, mengatur DBus, dan hanya kemudian mempublikasikan endpoint. Untuk Xfce komponen `xfwm4`/`xfdesktop` tetap diinstal. KDE menggunakan `startplasma-x11`, MATE `mate-session`, i3 `i3`, dan Ubuntu LXQt `startlxqt`.
 
-Tes baru mencoba **login RDP grafis nyata dengan FreeRDP melalui Xvfb** dan memastikan proses `xfce4-session`, `xfwm4` dan `xfdesktop` hidup. Jika tes gagal, log xrdp-sesman dan startup pengguna dicetak sebagai diagnostik. Perlu diperhatikan bahwa mode browser dengan KDE/i3/MATE tetap berbeda dari xrdp yang menggunakan sesi **Xfce** khusus.
+Tes grafis menggunakan **FreeRDP melalui Xvfb**, lalu memeriksa proses desktop terpilih (misalnya `plasmashell`/`kwin_x11` untuk KDE; `xfce4-session`/`xfwm4`/`xfdesktop` untuk Xfce). Jika gagal, log `xrdp-sesman` dan `~/.wfs-xrdp-session.log` digunakan untuk diagnosis. Browser dan XRDP tetap dua sesi berbeda.
 
 ## 📦 Aplikasi — kategori sama dengan Windows
 
@@ -165,7 +155,7 @@ Tes baru mencoba **login RDP grafis nyata dengan FreeRDP melalui Xvfb** dan mema
 |:--|:--|:--|
 | `ide_choice` | none, vscode, antigravity, both | VS Code: repo APT Microsoft Debian/Ubuntu; Antigravity IDE: dicoba dari tarball Linux resmi Google (tanpa checksum yang diterbitkan) |
 | `editor_choice` | none, capcut, shotcut, both | Shotcut melalui package manager; CapCut native Linux tidak didukung |
-| `metatrader_choice` | none, mt4, mt5, both | Wine/manual; **bukan** MetaTrader native Linux |
+| `metatrader_choice` | none, mt4, mt5, both | Instalasi **otomatis** Wine/Xvfb + installer MetaQuotes + verifikasi executable dan shortcut |
 | `router_choice` | none, 9router, omniroute, both | Dicoba via npm package yang dipilih |
 | `coding_agent_choice` | none, codex, claude, both | npm `@openai/codex` dan `@anthropic-ai/claude-code` |
 | `ai_agent_choice` | none, hermes, openclaw, opencode, both, all | OpenClaw/OpenCode via npm; Hermes CLI dicoba dari installer stable resmi Nous Research dengan mode noninteraktif; login model tetap manual |
@@ -180,10 +170,34 @@ Instalasi aplikasi opsional **tidak mematikan desktop jika gagal**. Installer se
 - **Akun dan password:** sebelum endpoint RDP dipublikasikan, script memastikan `getent passwd` dan `id` menemukan akun serta melakukan autentikasi PAM melalui `pamtester xrdp-sesman` dengan password secret yang sudah dipilih. Pemeriksaan sebelumnya baru sampai TCP handshake.
 - **Node/npm:** image Ubuntu dapat berisi Node.js 22 dari NodeSource yang sudah membundel npm. Memasang paket `npm` Debian secara terpisah menyebabkan konflik dependensi. Installer sekarang memverifikasi Node dan npm dahulu, lalu hanya memulihkan paket `nodejs` bila perlu. Git, Python, Node, 9Router, dan Codex diverifikasi satu per satu.
 - **GUI/agent tambahan:** Antigravity IDE dicoba dari arsip Linux Google resmi dan ditambahkan shortcut desktop jika executable ditemukan. Arsip itu tidak menyediakan digest SHA-256 terpisah dalam halaman yang diperiksa, sehingga tidak setara dengan verifikasi checksum ArtCraft. Hermes Agent dicoba dari installer resmi stable noninteraktif untuk akun Linux yang akan digunakan, tanpa memaksa login provider.
-- **MetaTrader 4/5:** tidak tersedia sebagai aplikasi Linux native. MetaQuotes menggunakan Wine dan proses installer yang membutuhkan interaksi GUI; opsi ini tetap `MANUAL` agar tidak memberi klaim instalasi palsu. CapCut native Linux tetap tidak didukung.
+- **MetaTrader 4/5:** tahap `linux/install-metatrader.sh` kini benar-benar mencoba instalasi dengan Wine, terpisah dari paket opsional, serta hanya mencatat `INSTALLED` ketika binary yang tepat dan shortcut berhasil diverifikasi. Jika gagal, hasil per-terminal `FAILED` tampil di Summary. CapCut native Linux tetap tidak didukung.
 - **Cleanup:** cache aplikasi milik root di volume Webtop dibersihkan dari folder sementara khusus run menggunakan izin yang memadai. Tidak menghapus data di luar workspace sementara.
 
 Jika ada aplikasi yang gagal, lihat kolom **Per-Application Results** di GitHub Actions Summary. Status `INSTALLED` berarti executable/paket ditemukan, bukan bahwa login provider, aktivasi lisensi, atau sesi GUI sudah terbukti.
+
+## 📈 MetaTrader 4/5 — installer otomatis dengan verifikasi nyata
+
+Pada menu `metatrader_choice`, pilih `mt4`, `mt5` atau `both`. Tahap tersendiri [`install-metatrader.sh`](install-metatrader.sh) berjalan setelah XRDP dan Chrome siap, tanpa memerlukan instalasi manual via RDP. Wine dan Xvfb diinstal dari repositori distro yang dipilih; installer asli diambil dari CDN MetaQuotes melalui HTTPS, dan prefiks Wine terpisah berada di home user desktop.
+
+| Pemilihan | Tindakan | Bukti pemasangan | Catatan |
+|:--|:--|:--|:--|
+| `none` | Tidak ada installer trading | `SKIPPED` | Desktop lebih cepat |
+| `mt5` | `mt5setup.exe /auto` | `terminal64.exe` di direktori MetaTrader 5, launcher, shortcut | Runtime GUI dan koneksi broker tetap harus diuji |
+| `mt4` | Coba `mt4setup.exe /auto` | `terminal.exe` di direktori MetaTrader 4, **bukan MT5** | Beberapa paket publisher pernah menginstal MT5; gunakan installer broker bila terjadi |
+| `both` | Dua prefiks Wine independen | Bukti executable/shortcut tiap platform | Dapat berstatus berbeda per platform |
+
+### Cara membuka terminal
+
+1. Jalankan [Linux Workspace](https://github.com/wawanwfs/RDP/actions/workflows/linux-remote-workspace.yml) dengan `distro=ubuntu`, `desktop=kde`, `remote_access=rdp`, `metatrader_choice=mt5` (atau `both`).
+2. Buka tab **Summary → Per-Application Results**. Pastikan baris `MetaTrader 5` benar-benar bertuliskan **INSTALLED**. Jika `FAILED`, jangan anggap aplikasi tersedia.
+3. Login melalui XRDP pada alamat IP yang dicetak run, buka menu aplikasi/desktop, lalu klik **MetaTrader 5 (WFS)**. Launcher `/usr/local/bin/wfs-mt5` memakai Wine prefix terpisah. Untuk MT4 gunakan `/usr/local/bin/wfs-mt4`.
+4. Setelah terminal terbuka, pilih server broker lalu login **secara manual**. Pasang EA setelah Anda memastikan platform bekerja dan menyimpan backup-nya. Tidak ada tindakan otomatis yang mengeksekusi order.
+5. Jika belum muncul, lihat **Install selected MetaTrader desktop terminals with Wine** dan status `FAILED` per platform. Aplikasi Wine tidak berjalan di Alpine lewat installer ini.
+
+> [!WARNING]
+> Wine tidak menjamin seluruh fitur broker, WebView2, grafik, EA berbasis DLL, atau login berjalan sebagaimana Windows. **INSTALLED berarti executable dan shortcut ditemukan**, bukan trading telah diuji. Koneksi live dan login broker tidak diuji CI. Pembatasan GitHub 360 menit juga berlaku, sehingga instalasi Wine besar dapat mengurangi masa penggunaan.
+
+Referensi: [panduan MT5 Linux MetaQuotes](https://www.metatrader5.com/en/terminal/help/start_advanced/install_linux), [MT5 installer /auto](https://www.metatrader5.com/en/terminal/help/start_advanced/installation), [panduan MT4 Linux](https://www.metatrader4.com/en/trading-platform/help/userguide/install_linux).
 
 ## ⏳ Keep Alive dan keamanan
 
@@ -192,6 +206,10 @@ Pilihan `duration_hours` adalah `1`, `3`, atau `6` jam dari sesi ready, dengan *
 **Jangan mematikan runner GitHub atau container dari terminal desktop.** Untuk keluar tanpa mengakhiri sesi, cukup tutup tab web atau disconnect klien RDP. Untuk menghentikan runner, pilih **Cancel workflow** di Actions. Cleanup mencoba menghapus container dan file password, sedangkan Tailscale Action menjalankan logout pada post-step.
 
 RDP dan web hanya bisa dijangkau dari **tailnet** yang memiliki izin ACL/grants sesuai konfigurasi Anda. Jangan membagikan password, auth key, URL sensitif, atau membuka port Docker ke internet publik.
+
+## 🧪 Additional compatibility: optional ISO guest
+
+Untuk eksperimen lama tersedia input `distro=igos-nusantara` (bukan default). Opsi ini menjalankan ISO **IGOS Nusantara 26** melalui QEMU di dalam outer Ubuntu/Xfce, berbeda dari semua distro Webtop native pada tabel utama. Pilih `desktop=xfce` dan `remote_access=rdp`. Aplikasi yang diinstal oleh workflow, termasuk Chrome dan MetaTrader, berada di **outer host**, bukan guest ISO. Kinerja tanpa KVM dapat sangat lambat dan **boot guest GUI tidak dinyatakan terverifikasi**. Gunakan distro native untuk aktivitas harian. Detail teknis ada di [`start-igos.sh`](start-igos.sh).
 
 ## 🧪 Pengujian dan troubleshooting
 
@@ -204,7 +222,7 @@ Test-NetConnection 100.x.x.x -Port 3389  # hanya rdp / both
 Test-NetConnection 100.x.x.x -Port 6082  # hanya web TCP fallback
 ```
 
-Jika RDP error, periksa langkah **Start native Linux xrdp server** dan **Publish private ... endpoints**; paket xrdp/Xorg bergantung repositori distro dan sesi RDP Xfce. Jika web gagal, cek log publikasi port, `ss -ltn` pada runner, autentikasi dan log container Webtop. **Tailscale Serve tidak wajib** untuk port privat `6082`/`3389`. Periksa ACL/grants tailnet jika koneksi dari perangkat lain gagal. Untuk paket aplikasi, baca tabel di Summary.
+Jika RDP error, periksa langkah **Start native Linux xrdp server** dan **Publish private ... endpoints**; paket xrdp/Xorg dan sesi desktop terpilih bergantung pada repositori distro. Jika web gagal, cek log publikasi port, `ss -ltn` pada runner, autentikasi dan log container Webtop. **Tailscale Serve tidak wajib** untuk port privat `6082`/`3389`. Periksa ACL/grants tailnet jika koneksi dari perangkat lain gagal. Untuk paket aplikasi, baca tabel di Summary.
 
 ---
 
