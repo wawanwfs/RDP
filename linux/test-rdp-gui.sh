@@ -34,17 +34,34 @@ log="$RUNNER_TEMP/wfs-rdp-gui-client.log"
 pid=$!
 trap 'kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true' EXIT
 ready=no
-for attempt in $(seq 1 35); do
-  if docker exec -u 0 wfs-linux-webtop /bin/sh -c \
-      "pgrep -u '$test_user' -x xfce4-session >/dev/null && pgrep -u '$test_user' -x xfwm4 >/dev/null && pgrep -u '$test_user' -x xfdesktop >/dev/null"; then
+desktop="${WFS_DESKTOP:-xfce}"
+case "$desktop" in
+  xfce) checks=(xfce4-session xfwm4 xfdesktop) ;;
+  kde) checks=(plasmashell kwin_x11) ;;
+  mate) checks=(mate-session marco mate-panel) ;;
+  i3) checks=(i3) ;;
+  lxqt) checks=(lxqt-session lxqt-panel openbox) ;;
+  *) echo "Unknown X11 smoke desktop: $desktop" >&2; exit 3 ;;
+esac
+echo "[WFS RDP Smoke] Verifying $desktop: ${checks[*]}"
+for attempt in $(seq 1 50); do
+  match=yes
+  for proc in "${checks[@]}"; do
+    if ! docker exec -u 0 wfs-linux-webtop pgrep -u "$test_user" -x "$proc" >/dev/null 2>&1; then
+      match=no
+      break
+    fi
+  done
+  if [ "$match" = yes ]; then
     ready=yes
     break
   fi
   if ! kill -0 "$pid" 2>/dev/null; then break; fi
   sleep 2
 done
+
 if [ "$ready" != yes ]; then
-  echo "::error::Actual GUI login did not launch xfce4-session + xfwm4 + xfdesktop for $test_user."
+  echo "::error::Actual GUI login did not launch all required $desktop processes (${checks[*]}) for $test_user."
   echo "[WFS RDP Smoke] FreeRDP client diagnostics (no passwords):"
   tail -50 "$log" || true
   echo "[WFS RDP Smoke] xrdp-sesman:"
@@ -53,5 +70,5 @@ if [ "$ready" != yes ]; then
   docker exec -u 0 wfs-linux-webtop /bin/sh -c 'tail -60 "$1/.wfs-xrdp-session.log" 2>/dev/null || true' -- "$(docker exec -u 0 wfs-linux-webtop getent passwd "$test_user" | cut -d: -f6)" || true
   exit 1
 fi
-echo "PASS: FreeRDP graphical session connected as $test_user and spawned xfce4-session, xfwm4, and xfdesktop."
-echo "PASS: verified Xorg/Xfce window manager and desktop processes — TCP/PAM alone are no longer accepted."
+echo "PASS: FreeRDP graphical session connected as $test_user and spawned all selected $desktop processes."
+echo "PASS: verified selected $desktop Xorg session — TCP/PAM alone are no longer accepted."
