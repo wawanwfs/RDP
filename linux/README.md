@@ -155,7 +155,7 @@ Tes grafis menggunakan **FreeRDP melalui Xvfb**, lalu memeriksa proses desktop t
 |:--|:--|:--|
 | `ide_choice` | none, vscode, antigravity, both | VS Code: repo APT Microsoft Debian/Ubuntu; Antigravity IDE: dicoba dari tarball Linux resmi Google (tanpa checksum yang diterbitkan) |
 | `editor_choice` | none, capcut, shotcut, both | Shotcut melalui package manager; CapCut native Linux tidak didukung |
-| `metatrader_choice` | none, mt4, mt5, both | Instalasi **otomatis** Wine/Xvfb + installer MetaQuotes + verifikasi executable dan shortcut |
+| `metatrader_choice` | none, mt4, mt5, both | Wine/Xvfb + official publisher/broker installer; either `INSTALLED` with verified executable or `PENDING_INTERACTIVE` |
 | `router_choice` | none, 9router, omniroute, both | Dicoba via npm package yang dipilih |
 | `coding_agent_choice` | none, codex, claude, both | npm `@openai/codex` dan `@anthropic-ai/claude-code` |
 | `ai_agent_choice` | none, hermes, openclaw, opencode, both, all | OpenClaw/OpenCode via npm; Hermes CLI dicoba dari installer stable resmi Nous Research dengan mode noninteraktif; login model tetap manual |
@@ -183,21 +183,27 @@ Pada menu `metatrader_choice`, pilih `mt4`, `mt5` atau `both`. Tahap tersendiri 
 |:--|:--|:--|:--|
 | `none` | Tidak ada installer trading | `SKIPPED` | Desktop lebih cepat |
 | `mt5` | `mt5setup.exe /auto` | `terminal64.exe` di direktori MetaTrader 5, launcher, shortcut | Runtime GUI dan koneksi broker tetap harus diuji |
-| `mt4` | Coba installer MT4 resmi Exness menggunakan Wine dan parameter `/auto` | `terminal.exe` di direktori MetaTrader 4, **bukan MT5** | Paket MT4 broker Exness resmi; harus diverifikasi sebagai MT4, bukan MT5 |
+| `mt4` | Coba installer Exness melalui Wine; jika wizard memerlukan GUI, sediakan shortcut | `terminal.exe` yang benar = `INSTALLED`; jika belum ada = `PENDING_INTERACTIVE` | Tidak mengklaim berhasil jika pemasangan membutuhkan klik wizard |
 | `both` | Dua prefiks Wine independen | Bukti executable/shortcut tiap platform | Dapat berstatus berbeda per platform |
 
 ### Cara membuka terminal
 
 1. Jalankan [Linux Workspace](https://github.com/wawanwfs/RDP/actions/workflows/linux-remote-workspace.yml) dengan `distro=ubuntu`, `desktop=kde`, `remote_access=rdp`, `metatrader_choice=mt5` (atau `both`).
 2. Buka tab **Summary → Per-Application Results**. Pastikan baris `MetaTrader 5` benar-benar bertuliskan **INSTALLED**. Jika `FAILED`, jangan anggap aplikasi tersedia.
-3. Login melalui XRDP pada alamat IP yang dicetak run, buka menu aplikasi/desktop, lalu klik **MetaTrader 5 (WFS)**. Launcher `/usr/local/bin/wfs-mt5` memakai Wine prefix terpisah. Untuk MT4 gunakan `/usr/local/bin/wfs-mt4`.
+3. Login melalui XRDP pada alamat IP yang dicetak run. Untuk MT5, buka **MetaTrader 5 (WFS)**; untuk MT4 yang sudah `INSTALLED` buka **MetaTrader 4 (WFS)**. Jika status MT4 **`PENDING_INTERACTIVE`**, klik **Install MetaTrader 4 (WFS)** di desktop, selesaikan wizard Exness di Wine, dan buka terminal dari hasil instalasi. Instalasi manual ini tidak otomatis mengubah status Summary run yang sudah dibuat.
 4. Setelah terminal terbuka, pilih server broker lalu login **secara manual**. Pasang EA setelah Anda memastikan platform bekerja dan menyimpan backup-nya. Tidak ada tindakan otomatis yang mengeksekusi order.
-5. Jika belum muncul, lihat **Install selected MetaTrader desktop terminals with Wine** dan status `FAILED` per platform. Aplikasi Wine tidak berjalan di Alpine lewat installer ini.
+5. Jika belum muncul, lihat **Install selected MetaTrader desktop terminals with Wine**, status `FAILED` atau `PENDING_INTERACTIVE`, dan log Wine. Aplikasi Wine tidak berjalan di Alpine lewat installer ini.
 
 > [!WARNING]
 > Wine tidak menjamin seluruh fitur broker, WebView2, grafik, EA berbasis DLL, atau login berjalan sebagaimana Windows. **INSTALLED berarti executable dan shortcut ditemukan**, bukan trading telah diuji. Koneksi live dan login broker tidak diuji CI. Pembatasan GitHub 360 menit juga berlaku, sehingga instalasi Wine besar dapat mengurangi masa penggunaan.
 
 Referensi: [panduan MT5 Linux MetaQuotes](https://www.metatrader5.com/en/terminal/help/start_advanced/install_linux), [MT5 installer /auto](https://www.metatrader5.com/en/terminal/help/start_advanced/installation), [panduan MT4 Linux](https://www.metatrader4.com/en/trading-platform/help/userguide/install_linux).
+
+### Hasil pengujian dan batasan penting
+
+Pengujian [Windows CI](https://github.com/wawanwfs/RDP/actions/runs/42924327969) sudah membuktikan instalasi **MT4 native Windows (Exness)** dan **MT5 native Windows**, termasuk executable yang benar. Di Linux, [CI Wine MT5](https://github.com/wawanwfs/RDP/actions/runs/42844537445) lulus. Pengujian MT4 Linux awalnya gagal pada installer grafis yang tidak menyelesaikan `/auto` setelah timeout; fallback desktop `PENDING_INTERACTIVE` disediakan agar aplikasi tidak pernah dinyatakan terinstal tanpa bukti. Jalur interaktif harus tetap diuji dalam sesi XRDP pengguna.
+
+`PENDING_INTERACTIVE` **bukan** berarti `INSTALLED`. File setup yang disimpan di home desktop user berasal dari unduhan HTTPS Exness dengan pemeriksaan header PE dan SHA-256. Workflow Linux belum melakukan verifikasi sertifikat Authenticode setara Windows.
 
 ## ⏳ Keep Alive dan keamanan
 
