@@ -836,7 +836,33 @@ jobs:
               throw "❌ MetaTrader $Version installer exited with code $($installerExit)."
             }
 
-            Write-Host "📈 ✅ MetaTrader $Version installer completed."
+            # A zero installer exit is insufficient: some MT4 URLs install MT5 or
+            # install into a broker-branded directory instead of MetaTrader 4.
+            $exeName = if ($Version -eq 'mt4') { 'terminal.exe' } else { 'terminal64.exe' }
+            $folderPattern = if ($Version -eq 'mt4') { '(?i)(exness|metatrader.?4|mt4)' } else { '(?i)(metatrader.?5|mt5)' }
+            $roots = @(
+              $env:ProgramFiles,
+              ${env:ProgramFiles(x86)},
+              (Join-Path $env:USERPROFILE 'AppData\Local\Programs'),
+              (Join-Path $env:SystemDrive 'Users\RDP\AppData\Local\Programs')
+            ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -Unique
+            $verified = $null
+            foreach ($root in $roots) {
+              foreach ($directory in @(Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue)) {
+                if ($directory.Name -notmatch $folderPattern -or $directory.Name -match '(?i)metatrader.?5' -and $Version -eq 'mt4') { continue }
+                $binary = Join-Path $directory.FullName $exeName
+                if (Test-Path -LiteralPath $binary -PathType Leaf) { $verified = $binary; break }
+                $binary = Get-ChildItem -LiteralPath $directory.FullName -Filter $exeName -File -Recurse -Depth 2 -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
+                if ($binary -and (Test-Path -LiteralPath $binary -PathType Leaf)) { $verified = $binary; break }
+              }
+              if ($verified) { break }
+            }
+            if (-not $verified) {
+              throw "❌ $Version installer returned exit code 0 but did not install a verified $exeName in a compatible vendor folder."
+            }
+            $envName = if ($Version -eq 'mt4') { 'MT4_TERMINAL_EXE' } else { 'MT5_TERMINAL_EXE' }
+            "$envName=$verified" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+            Write-Host "📈 ✅ MetaTrader $Version executable verified: $verified"
             } finally {
               if ($locked) { $mutex.ReleaseMutex() }
               $mutex.Dispose()
@@ -2117,17 +2143,21 @@ jobs:
 
           $mt4Target = Resolve-AppTarget `
             -CandidatePaths @(
+              $env:MT4_TERMINAL_EXE,
               "$env:ProgramFiles\MetaTrader 4\terminal.exe",
               "${env:ProgramFiles(x86)}\MetaTrader 4\terminal.exe"
             ) `
             -SearchRoots @(
               "$env:ProgramFiles\MetaTrader 4",
-              "${env:ProgramFiles(x86)}\MetaTrader 4"
+              "${env:ProgramFiles(x86)}\MetaTrader 4",
+              "$env:ProgramFiles\Exness MetaTrader 4",
+              "${env:ProgramFiles(x86)}\Exness MetaTrader 4"
             ) `
             -ExecutableNames @("terminal.exe")
 
           $mt5Target = Resolve-AppTarget `
             -CandidatePaths @(
+              $env:MT5_TERMINAL_EXE,
               "$env:ProgramFiles\MetaTrader 5\terminal64.exe",
               "$env:ProgramFiles\MetaTrader 5\terminal.exe",
               "${env:ProgramFiles(x86)}\MetaTrader 5\terminal.exe"
@@ -3120,11 +3150,15 @@ jobs:
           )
 
           $mt4Detected = Test-AnyPath @(
+            $env:MT4_TERMINAL_EXE,
             "$env:ProgramFiles\MetaTrader 4\terminal.exe",
-            "${env:ProgramFiles(x86)}\MetaTrader 4\terminal.exe"
+            "${env:ProgramFiles(x86)}\MetaTrader 4\terminal.exe",
+            "$env:ProgramFiles\Exness MetaTrader 4\terminal.exe",
+            "${env:ProgramFiles(x86)}\Exness MetaTrader 4\terminal.exe"
           )
 
           $mt5Detected = Test-AnyPath @(
+            $env:MT5_TERMINAL_EXE,
             "$env:ProgramFiles\MetaTrader 5\terminal64.exe",
             "$env:ProgramFiles\MetaTrader 5\terminal.exe",
             "${env:ProgramFiles(x86)}\MetaTrader 5\terminal.exe"
