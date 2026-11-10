@@ -99,8 +99,6 @@ Native Linux container **tidak menggunakan QEMU**. Sesi XRDP menjalankan desktop
 
 ## 🐧 Linux Workspace — premium desktop without VM
 
-<Image omitted; interface screenshots are produced by your actual run.>
-
 **Rekomendasi bawaan: Ubuntu Webtop + KDE Plasma + XRDP.** KDE menawarkan tampilan modern; Ubuntu menyediakan jalur paket Wine/MetaTrader dan IDE Linux yang lebih mudah. Browser Webtop dan XRDP KDE menggunakan sesi yang **berbeda**, namun keduanya dapat mengakses container yang sama. Instalasi KDE via X11 berbeda dari desktop Wayland pada browser dan memiliki smoke test tersendiri.
 
 | Distro asli (Webtop container) | KDE Plasma | Xfce | MATE | i3 | LXQt | Catatan XRDP |
