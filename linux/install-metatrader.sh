@@ -121,11 +121,13 @@ runuser -u "$account" -- env \
   wineboot -u || { echo "Wine initialization failed" >&2; exit 32; }
 # Timeout is not proof of failure: some installers auto-launch the terminal
 # and stay running. The executable check below is the acceptance gate.
+install_timeout=330
+[ "$app" = mt4 ] && install_timeout=120
 set +e
 runuser -u "$account" -- env \
   HOME="$home" USER="$account" WINEPREFIX="$prefix" WINEARCH=win64 \
   WINEDEBUG=-all WINEDLLOVERRIDES="mscoree,mshtml=" \
-  timeout --signal=TERM --kill-after=8 330 \
+  timeout --signal=TERM --kill-after=8 "$install_timeout" \
   xvfb-run -a -s '-screen 0 1280x800x24 -nolisten tcp' \
   wine "$installer" /auto
 result=$?
