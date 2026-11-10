@@ -74,7 +74,7 @@ then
   done
   exit 1
 fi
-say "Downloading only official MetaQuotes installer executable(s), inside the isolated container."
+say "Downloading official publisher/broker HTTPS installers into isolated Wine prefixes."
 failed=0
 for app in mt4 mt5; do
   if [ "$choice" != "$app" ] && [ "$choice" != both ]; then continue; fi
@@ -145,9 +145,45 @@ else
     exit 33
   fi
 fi
-test -n "$terminal" && test -s "$terminal" || {
-  echo "MetaTrader $app terminal executable missing after /auto installer." >&2; exit 34;
-}
+if [ -z "$terminal" ] || [ ! -s "$terminal" ]; then
+  echo "MetaTrader $app terminal missing after automated Wine install (installer exit $result)." >&2
+  if [ "$app" = mt4 ]; then
+    # The Exness MT4 bootstrap may require a real graphical session under Wine.
+    # Preserve the verified-source PE setup for the signed-in desktop user;
+    # do NOT report MT4 as INSTALLED when terminal.exe is absent.
+    pending_dir="$home/.wfs-metatrader/pending"
+    pending_file="$pending_dir/mt4setup.exe"
+    mkdir -p "$pending_dir"
+    cp "$installer" "$pending_file"
+    chmod 600 "$pending_file"
+    chown "$account" "$pending_dir" "$pending_file"
+    cat > /usr/local/bin/wfs-mt4-install <<LAUNCH
+#!/bin/sh
+export WINEPREFIX="$prefix"
+export WINEDEBUG=-all
+exec wine "$pending_file"
+LAUNCH
+    chmod 755 /usr/local/bin/wfs-mt4-install
+    mkdir -p /usr/share/applications
+    cat > /usr/share/applications/wfs-mt4-install.desktop <<'DESKTOP'
+[Desktop Entry]
+Type=Application
+Name=Install MetaTrader 4 (WFS)
+Comment=Complete original Exness MT4 installer in interactive Wine GUI
+Exec=/usr/local/bin/wfs-mt4-install
+Terminal=false
+Categories=Office;Finance;
+DESKTOP
+    cp /usr/share/applications/wfs-mt4-install.desktop "$home/Desktop/wfs-mt4-install.desktop"
+    chown "$account" "$home/Desktop/wfs-mt4-install.desktop"
+    chmod 755 "$home/Desktop/wfs-mt4-install.desktop"
+    test -s "$pending_file" && test -x /usr/local/bin/wfs-mt4-install
+    test -s "$home/Desktop/wfs-mt4-install.desktop"
+    echo "PENDING_INTERACTIVE: MT4 downloaded from official Exness CDN, but Wine GUI setup still requires user action." >&2
+    exit 42
+  fi
+  exit 34
+fi
 # Restrict launcher to the original user; do not interpolate input URLs or
 # credentials into .desktop entries. Fixed launcher name is safe.
 launcher="/usr/local/bin/wfs-$app"
@@ -180,8 +216,13 @@ INSTALL
   then
     record "$label" "INSTALLED (Wine executable + Desktop shortcut verified; GUI/account login not yet tested)"
   else
-    record "$label" "FAILED (installer did not produce verified $app terminal; broker package or Wine compatibility may be required)"
-    failed=$((failed+1))
+    rc=$?
+    if [ "$app" = mt4 ] && [ "$rc" -eq 42 ]; then
+      record "$label" "PENDING_INTERACTIVE (Exness setup + Wine launcher saved to desktop; actual terminal not installed)"
+    else
+      record "$label" "FAILED (Wine installer exit $rc; no verified $app terminal)"
+      failed=$((failed+1))
+    fi
   fi
 done
 say "Wine selected app installation finished; failed=$failed. Per-app results are in Actions Summary."
