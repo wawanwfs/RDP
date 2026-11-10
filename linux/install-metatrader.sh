@@ -80,7 +80,7 @@ for app in mt4 mt5; do
   if [ "$choice" != "$app" ] && [ "$choice" != both ]; then continue; fi
   if [ "$app" = mt4 ]; then label="MetaTrader 4"; else label="MetaTrader 5"; fi
   # MT4 upstream historically sometimes supplied an MT5 installer under the
-  # mt4setup name. Verify actual installed binary to avoid false successes.
+  # mt4setup name. Use a broker-hosted MT4 package and verify the binary.
   # For broker-branded MT4, use broker's authorized installer manually when needed.
   if docker exec -i -u 0 "$container" /bin/bash -s -- "$app" "$user" <<'INSTALL'
 set -Eeuo pipefail
@@ -95,7 +95,13 @@ mkdir -p "$prefix" "$install_dir" "$home/Desktop"
 chown -R "$account" "$home/.wfs-metatrader" "$home/Desktop"
 chmod 700 "$home/.wfs-metatrader"
 trap 'rm -rf "$install_dir"' EXIT
-url="https://download.mql5.com/cdn/web/metaquotes.software.corp/$app/${app}setup.exe"
+if [ "$app" = mt4 ]; then
+  # Current generic MetaQuotes MT4 links may resolve to an MT5 installer.
+  # This source is the Windows MT4 executable linked by Exness official Help Center.
+  url="https://download.terminal.free/cdn/web/exness.technologies.ltd/mt4/exness4setup.exe"
+else
+  url="https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe"
+fi
 installer="$install_dir/${app}setup.exe"
 curl --fail --location --silent --show-error --retry 3 --retry-all-errors \
   --connect-timeout 30 --max-time 150 --max-filesize 100000000 \
@@ -131,7 +137,9 @@ runuser -u "$account" -- env HOME="$home" WINEPREFIX="$prefix" \
 if [ "$app" = mt5 ]; then
   terminal="$(find "$prefix/drive_c" -type f -iname terminal64.exe -path '*MetaTrader 5*' -print -quit 2>/dev/null || true)"
 else
-  terminal="$(find "$prefix/drive_c" -type f -iname terminal.exe -path '*MetaTrader 4*' -print -quit 2>/dev/null || true)"
+  terminal="$(find "$prefix/drive_c/Program Files" "$prefix/drive_c/Program Files (x86)" -type f -iname terminal.exe -print -quit 2>/dev/null || true)"
+  # Ignore mistaken MT5 bootstrap installers that leave 64-bit terminal under
+  # the same fresh prefix. An Exness-branded folder name is supported.
   if [ -n "$(find "$prefix/drive_c" -type f -iname terminal64.exe -path '*MetaTrader 5*' -print -quit 2>/dev/null || true)" ]; then
     echo "MT4 installer resolved to MT5; refusing false-positive MT4 success." >&2
     exit 33
