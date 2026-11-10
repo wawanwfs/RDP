@@ -132,12 +132,12 @@ Distro native memakai tag [LinuxServer Webtop](https://docs.linuxserver.io/image
 Saat `metatrader_choice=mt4`, `mt5`, atau `both`, workflow memanggil [`linux/install-metatrader.sh`](linux/install-metatrader.sh) secara otomatis **setelah desktop XRDP disiapkan**. Script memasang Wine/Xvfb dari repositori distro, mengunduh installer resmi MT5 dari MetaQuotes dan paket MT4 resmi dari Exness melalui HTTPS, menyiapkan prefix Wine terpisah, mencoba instalasi tanpa interaksi, mencari **terminal MetaTrader yang benar**, lalu membuat launcher dan shortcut bila executable ditemukan.
 
 - **MT5:** installer `mt5setup.exe /auto` resmi; hanya dinyatakan `INSTALLED` jika `terminal64.exe` yang benar, launcher, dan shortcut ada.
-- **MT4:** karena tautan MT4 generik pernah menginstal MT5, pipeline kini menggunakan **paket MT4 dari tautan resmi Exness**. Script menolak sukses jika executable MT4 tidak terbukti. Broker lain dapat digunakan dengan menambahkan server di terminal setelah login; bila gagal gunakan unduhan langsung dari broker tepercaya.
+- **MT4:** menggunakan **installer Exness dari tautan resmi**. Pada Wine/Ubuntu, bootstrap MT4 dapat memerlukan GUI sehingga `/auto` bisa berhenti tanpa memasang terminal. Jika demikian, workflow menyimpan installer ke direktori pengguna, membuat shortcut **Install MetaTrader 4 (WFS)** di desktop remote, dan mencatat status **`PENDING_INTERACTIVE`**, bukan `INSTALLED`. Klik shortcut tersebut setelah masuk XRDP dan ikuti wizard. MT4 dinyatakan `INSTALLED` hanya jika `terminal.exe` benar-benar terpasang.
 - **Windows:** MT4/MT5 memakai installer Windows native; tidak memerlukan Wine.
 - **Linux:** Chrome dan ekstensi wajib berada di sistem Linux yang dipilih, sedangkan opsi guest ISO eksperimen memasangnya pada host XRDP, **bukan** otomatis di guest.
 - **Tidak ada** broker login, password akun trading, EA, atau aktivasi auto-trade yang dilakukan oleh workflow. Pemasangan file bukan bukti terminal benar-benar dapat dipakai trading; buka shortcut dan cek koneksi secara manual.
 
-Installer bisa berstatus `INSTALLED`, `FAILED`, atau `UNSUPPORTED` per terminal. Bila app opsional gagal, remote tetap disediakan dan penyebabnya tampil di **Actions Summary**. Wine di Alpine tidak didukung oleh tahap ini. Untuk Linux trading terminal terbaik gunakan **Ubuntu**.
+Installer bisa berstatus `INSTALLED`, `PENDING_INTERACTIVE`, `FAILED`, atau `UNSUPPORTED` per terminal. Bila app opsional gagal, remote tetap disediakan dan penyebabnya tampil di **Actions Summary**. Wine di Alpine tidak didukung oleh tahap ini. Untuk Linux trading terminal terbaik gunakan **Ubuntu**.
 
 ### 🪟 Windows MetaTrader — verified installer and interactive recovery
 
@@ -179,6 +179,7 @@ Jika setup otomatis tidak menghasilkan terminal yang benar, script menyalin inst
 | [Linux CI](https://github.com/wawanwfs/RDP/actions/workflows/linux-workspace-checks.yml) | Bash syntax, YAML, security assertions, Webtop HTTPS, RDP/Xorg smoke tests | Per-run results can change; check latest HEAD |
 | Default KDE XRDP smoke | Login FreeRDP dan proses KDE X11 | Tidak menjamin setiap GPU/klien remote sama |
 | Debian Xfce smoke | Verifikasi baseline dan kompatibilitas | Tidak membuktikan semua distro/desktop |
+| Linux MT4 Wine test | Original Exness installer, 32-bit Wine runtime, and pending-GUI verification | No unattended MT4 installation claimed when terminal.exe is missing |
 | Wine status per terminal | Pemeriksaan executable MT4 atau MT5 yang terpasang | Tidak membuktikan login broker, chart rendering, EA, atau runtime uptime |
 | [Windows workflow](https://github.com/wawanwfs/RDP/actions/workflows/windows-remote-workspace-with-apps.yml) | Full Windows setup, app installs, session dashboard | Lihat log dan Summary run aktual |
 
