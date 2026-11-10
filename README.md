@@ -22,7 +22,7 @@
 | Native Windows applications | Native Linux apps; Linux MT4/MT5 via Wine |
 | [Windows guide ↓](#-windows-remote-workspace) | [**Complete Linux guide**](linux/README.md) |
 
-[**All workflow runs**](https://github.com/wawanwfs/RDP/actions) · [**Repository secrets**](https://github.com/wawanwfs/RDP/settings/secrets/actions) · [**Linux verification**](https://github.com/wawanwfs/RDP/actions/workflows/linux-workspace-checks.yml)
+[**All workflow runs**](https://github.com/wawanwfs/RDP/actions) · [**Repository secrets**](https://github.com/wawanwfs/RDP/settings/secrets/actions) · [**Acceptance matrix**](docs/ACCEPTANCE_MATRIX.md) · [**Linux verification**](https://github.com/wawanwfs/RDP/actions/workflows/linux-workspace-checks.yml)
 
 </div>
 
