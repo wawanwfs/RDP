@@ -813,7 +813,7 @@ jobs:
             if (-not (Test-Path -LiteralPath $script -PathType Leaf)) {
               throw "Missing shared MetaTrader installer: $script (checkout must run first)"
             }
-            & $script -Version $Version -TimeoutSeconds 300 | Out-Host
+            & $script -Version $Version -TimeoutSeconds 300 -AllowInteractiveFallback | Out-Host
           }
 
           function Install-ArtCraft {
@@ -3169,8 +3169,10 @@ jobs:
           Add-Row $appRows "Antigravity IDE" (Get-InstallStatus $wantedAntigravity $antigravityDetected) "Optional IDE; prepared for RDP user"
           Add-Row $appRows "CapCut" (Get-InstallStatus $wantedCapCut $capCutDetected) "Per-user CapCut; binary checked for RDP"
           Add-Row $appRows "Shotcut" (Get-InstallStatus $wantedShotcut $shotcutDetected) "Optional video editor"
-          Add-Row $appRows "MetaTrader 4" (Get-InstallStatus $wantedMT4 $mt4Detected) "Optional trading terminal"
-          Add-Row $appRows "MetaTrader 5" (Get-InstallStatus $wantedMT5 $mt5Detected) "Optional trading terminal"
+          $mt4State = if ($mt4Detected) { "✅ Verified installed" } elseif ($wantedMT4 -and $env:MT4_INSTALL_STATUS -eq 'PENDING_INTERACTIVE') { "🟠 Pending signed installer — click Public Desktop shortcut after RDP login" } else { Get-InstallStatus $wantedMT4 $mt4Detected }
+          Add-Row $appRows "MetaTrader 4" $mt4State "Official Exness MT4; only terminal.exe counts as installed"
+          $mt5State = if ($mt5Detected) { "✅ Verified installed" } elseif ($wantedMT5 -and $env:MT5_INSTALL_STATUS -eq 'PENDING_INTERACTIVE') { "🟠 Pending signed installer — click Public Desktop shortcut after RDP login" } else { Get-InstallStatus $wantedMT5 $mt5Detected }
+          Add-Row $appRows "MetaTrader 5" $mt5State "Official MetaQuotes MT5; only terminal64.exe counts as installed"
           Add-Row $appRows "Codex CLI" (Get-InstallStatus $wantedCodex $codexDetected) "npm package ``@openai/codex``"
           Add-Row $appRows "Claude Code" (Get-InstallStatus $wantedClaude $claudeDetected) "Official PowerShell installer"
           Add-Row $appRows "9Router CLI" (Get-InstallStatus $wanted9Router $nineRouterDetected) "npm package ``9router``"
