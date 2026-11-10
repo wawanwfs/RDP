@@ -3,6 +3,7 @@
 set -uo pipefail
 failed_count=0
 distro="$WFS_DISTRO"
+[ "$distro" = igos-nusantara ] && distro=ubuntu  # outer RDP shell, not ISO guest
 status_file="$RUNNER_TEMP/wfs-linux/apps-status.tsv"
 mkdir -p "$(dirname "$status_file")"
 : > "$status_file"
