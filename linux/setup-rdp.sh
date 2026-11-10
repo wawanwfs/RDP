@@ -10,7 +10,7 @@ case "$WFS_REMOTE" in
   *) die "Unsupported RDP mode" ;;
 esac
 case "$WFS_DISTRO" in
-  ubuntu|debian|fedora|alpine) ;;
+  ubuntu|debian|fedora|alpine|igos-nusantara) ;;
   arch) die "Arch xrdp is not currently supported without AUR packages." ;;
   *) die "Unsupported distro for xrdp" ;;
 esac
@@ -19,6 +19,8 @@ info "Installing complete Xfce desktop, xorgxrdp and validating Linux account '$
 docker exec -i -u 0 wfs-linux-webtop /bin/sh -s -- "$WFS_DISTRO" "$WFS_RDP_USERNAME" <<'IN_CONTAINER'
 set -eu
 distro="$1"
+# IGN guest is a separate ISO VM; xrdp authenticates on the Ubuntu shell.
+[ "$distro" = igos-nusantara ] && distro=ubuntu
 username="$2"
 export DEBIAN_FRONTEND=noninteractive
 case "$distro" in
