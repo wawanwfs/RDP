@@ -162,7 +162,7 @@ jobs:
           bash linux/setup-rdp.sh
           test "$(docker inspect -f '{{.State.Running}}' wfs-linux-webtop)" = true
           docker exec -u 0 wfs-linux-webtop test "$(docker exec -u 0 wfs-linux-webtop cat /etc/wfs-rdp-desktop)" = kde
-          docker exec -u 0 wfs-linux-webtop command -v startplasma-x11
+          docker exec -u 0 wfs-linux-webtop /bin/sh -c 'command -v startplasma-x11'
       - name: "🧪 Real RDP login must start KDE session (not silent Xfce fallback)"
         timeout-minutes: 7
         run: bash linux/test-rdp-gui.sh
