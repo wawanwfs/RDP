@@ -18,7 +18,7 @@
 | [**▶ Launch Windows**](https://github.com/wawanwfs/RDP/actions/workflows/windows-remote-workspace-with-apps.yml) | [**▶ Launch Linux**](https://github.com/wawanwfs/RDP/actions/workflows/linux-remote-workspace.yml) |
 | Default: Windows 2025 + RDP | **Default: Ubuntu + KDE Plasma + XRDP** |
 | RDP / noVNC / Both | XRDP / Webtop Selkies / Both |
-| Native Windows applications | Native Linux apps; Windows MT4/MT5 via Wine |
+| Native Windows applications | Native Linux apps; Linux MT4/MT5 via Wine |
 | [Windows guide ↓](#-windows-remote-workspace) | [**Complete Linux guide**](linux/README.md) |
 
 [**All workflow runs**](https://github.com/wawanwfs/RDP/actions) · [**Repository secrets**](https://github.com/wawanwfs/RDP/settings/secrets/actions) · [**Linux verification**](https://github.com/wawanwfs/RDP/actions/workflows/linux-workspace-checks.yml)
