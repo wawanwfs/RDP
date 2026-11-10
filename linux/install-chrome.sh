@@ -10,6 +10,8 @@ say "Installing Google Chrome (or distro Chromium fallback) and mandatory Cookie
 docker exec -i -u 0 wfs-linux-webtop /bin/sh -s -- "$WFS_DISTRO" <<'IN_CONTAINER'
 set -eu
 distro="$1"
+# ISO guest remains untouched; mandatory Chrome lives in the XRDP outer shell.
+[ "$distro" = igos-nusantara ] && distro=ubuntu
 export DEBIAN_FRONTEND=noninteractive
 case "$distro" in
   ubuntu|debian)
