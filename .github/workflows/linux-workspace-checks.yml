@@ -202,7 +202,13 @@ jobs:
         timeout-minutes: 24
         run: |
           bash linux/install-metatrader.sh
-          grep -q 
+          grep -F "MetaTrader 5" "$RUNNER_TEMP/wfs-linux/trading-status.tsv" | grep -F "INSTALLED"
+          docker exec -u 0 wfs-linux-webtop /bin/sh -c 'test -x /usr/local/bin/wfs-mt5 && test -f /usr/share/applications/wfs-mt5.desktop'
+      - name: "🧹 Always cleanup CI workspace"
+        if: always()
+        run: bash linux/workspace.sh cleanup
+
+  smoke-debian-xfce:
     name: "Smoke Debian Xfce desktop on localhost"
     needs: validate
     runs-on: ubuntu-24.04
