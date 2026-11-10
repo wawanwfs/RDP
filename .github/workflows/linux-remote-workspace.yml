@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
     inputs:
       distro:
-        description: "Distro Linux (container di Ubuntu runner)"
+        description: "Distro Linux / IGOS 26 ISO VM (eksperimental; RDP only)"
         required: true
         type: choice
         default: "debian"
@@ -15,6 +15,7 @@ on:
           - "fedora"
           - "arch"
           - "alpine"
+          - "igos-nusantara"
       desktop:
         description: "Desktop: Xfce/MATE ringan, KDE mewah, i3 super ringan"
         required: true
@@ -29,7 +30,7 @@ on:
         description: "Remote seperti Windows: RDP, noVNC/web Selkies, atau keduanya"
         required: true
         type: choice
-        default: "novnc"
+        default: "rdp"
         options:
           - "rdp"
           - "novnc"
@@ -222,6 +223,11 @@ jobs:
       - name: "🌐 Install Google Chrome + mandatory Cookie-Editor and GoFullPage extensions"
         timeout-minutes: 10
         run: bash linux/install-chrome.sh
+
+      - name: "🇮🇩 Boot genuine IGOS Nusantara 26 ISO inside experimental QEMU VM"
+        if: inputs.distro == 'igos-nusantara'
+        timeout-minutes: 25
+        run: bash linux/start-igos.sh
 
       - name: "🐾 Connect temporary runner to private Tailscale tailnet"
         uses: tailscale/github-action@v4
