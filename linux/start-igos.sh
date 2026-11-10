@@ -57,11 +57,13 @@ fi
 # container and bound to its loopback. Never expose it to Docker ports/Tailscale.
 nohup qemu-system-x86_64 \
   -machine q35 -m 4096 -smp 2 "${cpu[@]}" -nodefaults \
-  -device virtio-vga -device qemu-xhci -device usb-tablet \
+  -device virtio-vga -device qemu-xhci -device usb-tablet -device usb-kbd \
+  -device ich9-ahci,id=ahci \
+  -drive if=none,id=igncd,file="$iso",media=cdrom,readonly=on \
+  -device ide-cd,drive=igncd,bus=ahci.0 \
   -netdev user,id=n0 -device virtio-net-pci,netdev=n0 \
   -drive if=pflash,format=raw,readonly=on,file="$code" \
   -drive if=pflash,format=raw,file=/config/wfs-igos-ovmf-vars.fd \
-  -drive file="$iso",media=cdrom,readonly=on \
   -boot order=d -display none -vnc 127.0.0.1:1 \
   > /config/wfs-igos-qemu.log 2>&1 < /dev/null &
 qemu_pid=$!
