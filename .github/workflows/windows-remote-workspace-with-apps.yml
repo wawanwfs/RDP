@@ -812,7 +812,7 @@ jobs:
               catch [Threading.AbandonedMutexException] { $locked = $true }
               if (-not $locked) { throw '❌ Timed out waiting for MetaTrader installer lock.' }
             $installerUrl = if ($Version -eq 'mt4') {
-              'https://download.mql5.com/cdn/web/metaquotes.software.corp/mt4/mt4setup.exe'
+              'https://download.terminal.free/cdn/web/exness.technologies.ltd/mt4/exness4setup.exe'
             } else {
               'https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe'
             }
@@ -1312,7 +1312,7 @@ jobs:
             }
           }
 
-          # MetaTrader installers are fetched from MetaQuotes' official CDN.
+          # MetaTrader 5 is from MetaQuotes; MT4 from the official Exness download URL (generic MT4 links may install MT5).
           if ($metatraderChoice -in @('mt4', 'both')) {
             Invoke-OptionalInstall 'MetaTrader 4' {
               Install-MetaTrader -Version 'mt4'
