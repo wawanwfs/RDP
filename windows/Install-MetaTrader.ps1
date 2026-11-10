@@ -8,7 +8,8 @@
 param(
   [Parameter(Mandatory=$true)]
   [ValidateSet('mt4','mt5')] [string] $Version,
-  [int] $TimeoutSeconds = 300
+  [int] $TimeoutSeconds = 300,
+  [switch] $AllowInteractiveFallback
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -53,6 +54,7 @@ if (-not $terminal) {
       throw "$title unexpected Authenticode signer: $($signature.SignerCertificate.Subject)"
     }
     Write-Host "[WFS Trading] Authenticode valid; installer SHA256: $((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash)"
+    $installExitCode = $null
     $mutex = [Threading.Mutex]::new($false, 'Global\RdpWorkflowWingetInstall')
     $locked = $false
     try {
@@ -66,14 +68,60 @@ if (-not $terminal) {
           throw "$title installer timeout"
         }
         $process.WaitForExit()
-        if ($process.ExitCode -ne 0) { throw "$title installer exit code $($process.ExitCode)" }
+        $installExitCode = $process.ExitCode
       } finally { $process.Dispose() }
     } finally {
       if ($locked) { $mutex.ReleaseMutex() }
       $mutex.Dispose()
     }
-    $terminal = Find-Terminal
-    if (-not $terminal) { throw "$title installer finished but no correct $exeName was found in Program Files" }
+    # The web bootstrap can hand execution to a child or exit code 1 when no
+    # interactive session is present. Neither an exit code nor a process name
+    # proves installation. Poll for the exact terminal before deciding.
+    for ($attempt = 0; $attempt -lt 15; $attempt++) {
+      $terminal = Find-Terminal
+      if ($terminal) { break }
+      Start-Sleep -Seconds 3
+    }
+    if (-not $terminal) {
+      if (-not $AllowInteractiveFallback) {
+        throw "$title unattended setup exited $installExitCode and did not produce $exeName"
+      }
+      # Preserve the *already signed and verified* installer on the disposable
+      # runner, and expose a visible shortcut for the first interactive RDP
+      # login. Do not assert that MT4/MT5 is installed.
+      $pendingDir = Join-Path $env:ProgramData "WFS-Remote-Workspaces\PendingTrading\$Version"
+      New-Item -Path $pendingDir -ItemType Directory -Force | Out-Null
+      $pendingExe = Join-Path $pendingDir ("setup-$Version.exe")
+      Copy-Item -LiteralPath $installer -Destination $pendingExe -Force
+      $newSignature = Get-AuthenticodeSignature -LiteralPath $pendingExe
+      if ($newSignature.Status -ne 'Valid') { throw 'Staged installer signature verification failed' }
+      $commonDesktop = [Environment]::GetFolderPath('CommonDesktopDirectory')
+      if (-not $commonDesktop) { throw 'Public Desktop path is unavailable' }
+      $shortcut = Join-Path $commonDesktop "Install $title (WFS).lnk"
+      $shell = New-Object -ComObject WScript.Shell
+      $link = $shell.CreateShortcut($shortcut)
+      $link.TargetPath = $pendingExe
+      $link.WorkingDirectory = $pendingDir
+      $link.Description = "Complete the signed $title installer when logged in through RDP"
+      $link.Save()
+      if (-not (Test-Path -LiteralPath $shortcut)) { throw 'Staged desktop shortcut was not created' }
+      $statusVar = if ($Version -eq 'mt4') { 'MT4_INSTALL_STATUS' } else { 'MT5_INSTALL_STATUS' }
+      Set-Item -Path "Env:$statusVar" -Value 'PENDING_INTERACTIVE'
+      if ($env:GITHUB_ENV) {
+        Add-Content -LiteralPath $env:GITHUB_ENV -Value "$statusVar=PENDING_INTERACTIVE" -Encoding utf8
+      }
+      Write-Warning "$title unattended setup exited $installExitCode. Signed installer staged to Public Desktop; interactive installation is still REQUIRED."
+      return [pscustomobject]@{
+        Version = $Version
+        Verified = $false
+        PendingInteractive = $true
+        Installer = $pendingExe
+        Shortcut = $shortcut
+      }
+    }
+    if ($installExitCode -ne 0) {
+      Write-Warning "$title installer returned $installExitCode but the version-matched terminal executable was independently verified."
+    }
   } finally {
     Remove-Item -LiteralPath $installer -Force -ErrorAction SilentlyContinue
   }
