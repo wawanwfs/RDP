@@ -208,6 +208,47 @@ jobs:
         if: always()
         run: bash linux/workspace.sh cleanup
 
+  smoke-ubuntu-mt4:
+    name: "Smoke actual MetaTrader 4 Wine install (Ubuntu)"
+    needs: validate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 33
+    env:
+      WFS_DISTRO: ubuntu
+      WFS_DESKTOP: xfce
+      WFS_METATRADER: mt4
+      WFS_DURATION: "1"
+      WFS_TRANSPORT: tailnet_tls_tcp
+      WFS_APPS: none
+      WFS_REMOTE: novnc
+      WFS_HOSTNAME_BASE: rdp-runner
+      WFS_HOSTNAME_MODE: same_each_run
+      WFS_RDP_USERNAME: RDP
+      WFS_WEB_USERNAME: wfs
+      WFS_RDP_PASSWORD_MODE: same_from_secret
+      WFS_VNC_PASSWORD_MODE: same_from_secret
+    steps:
+      - name: "📦 Checkout"
+        uses: actions/checkout@v4
+      - name: "🔐 Start disposable Ubuntu Xfce Webtop"
+        env:
+          WFS_VNC_PASSWORD: "CI-MT4-WINE-WEB-ONLY-2026"
+        run: |
+          bash linux/workspace.sh prepare
+          bash linux/workspace.sh start
+      - name: "📈 Install official broker MT4 under Wine and verify 32-bit terminal"
+        timeout-minutes: 25
+        run: |
+          set -euo pipefail
+          bash linux/install-metatrader.sh
+          grep -F "MetaTrader 4" "$RUNNER_TEMP/wfs-linux/trading-status.tsv" | grep -F "INSTALLED"
+          docker exec -u 0 wfs-linux-webtop /bin/sh -c 'test -x /usr/local/bin/wfs-mt4 && test -f /usr/share/applications/wfs-mt4.desktop'
+          docker exec -u 0 wfs-linux-webtop /bin/sh -c 'find /home /config -type f -name terminal.exe -print -quit | grep -F terminal.exe'
+          echo 'PASS: Wine MT4 application, launcher, and correct terminal.exe verified (no broker login).'
+      - name: "🧹 Always cleanup temporary Webtop"
+        if: always()
+        run: bash linux/workspace.sh cleanup
+
   smoke-debian-xfce:
     name: "Smoke Debian Xfce desktop on localhost"
     needs: validate
