@@ -101,13 +101,18 @@ start() {
   done
   [ "$pulled" = yes ] || die "Cannot pull $image after four attempts (check registry rate limits)."
   docker rm -f "$name" >/dev/null 2>&1 || true
-  local -a rdp_args=()
+  local -a rdp_args=() kvm_args=()
+  if [ "$WFS_DISTRO" = igos-nusantara ] && [ -c /dev/kvm ]; then
+    # Safe pass-through only when provided by this runner; otherwise QEMU uses TCG.
+    kvm_args=(--device=/dev/kvm:/dev/kvm)
+    notice "⚡ KVM available on host; passing device to isolated IGN guest container."
+  fi
   if [ "$WFS_REMOTE" = rdp ] || [ "$WFS_REMOTE" = both ]; then
     [ -s "$rdp_password_file" ] || die "RDP password file missing."
     rdp_args=(-p 127.0.0.1:13389:3389 --mount "type=bind,src=$rdp_password_file,dst=/run/secrets/rdp_password,readonly")
   fi
   docker run -d --name "$name" --shm-size=1g --memory=8g --cpus=3 --restart=no \
-    -p 127.0.0.1:13001:3001 -p 127.0.0.1:13000:3000 "${rdp_args[@]}" \
+    -p 127.0.0.1:13001:3001 -p 127.0.0.1:13000:3000 "${rdp_args[@]}" "${kvm_args[@]}" \
     --mount "type=bind,src=$config,dst=/config" \
     --mount "type=bind,src=$password_file,dst=/run/secrets/web_password,readonly" \
     -e "PUID=$(id -u)" -e "PGID=$(id -g)" \
