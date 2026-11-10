@@ -116,6 +116,10 @@ jobs:
           assert "fdpohaocaechififmbbbbbknoalclacl" in chrome_source
           assert "ExtensionInstallForcelist" in chrome_source
           assert "bash linux/install-chrome.sh" in text
+          assert 'for exe in chromium chromium-browser' in chrome_source
+          assert '/etc/chromium/policies/managed' in chrome_source
+          assert '/etc/opt/chrome/policies/managed' in chrome_source
+          assert 'WFS_BROWSER_FAMILY=' in chrome_source
           assert pathlib.Path("linux/install-antigravity.sh").is_file()
           assert pathlib.Path("linux/install-hermes.sh").is_file()
           apps_source = pathlib.Path("linux/install-apps.sh").read_text(encoding="utf-8")
@@ -482,7 +486,23 @@ jobs:
           bash linux/workspace.sh start
           bash linux/install-apps.sh
           bash linux/install-chrome.sh
-          docker exec -u 0 wfs-linux-webtop /bin/sh -c 'command -v google-chrome-stable && grep -Fq "ExtensionInstallForcelist" /etc/opt/chrome/policies/managed/wfs-required-extensions.json'
+          docker exec -u 0 wfs-linux-webtop /bin/sh -c '
+            set -eu
+            browser=$(cat /etc/wfs-browser-executable)
+            family=$(cat /etc/wfs-browser-family)
+            action=$(cat /etc/wfs-browser-install-action)
+            test -x "$browser"
+            if [ "$family" = chromium ]; then
+              policy=/etc/chromium/policies/managed/wfs-required-extensions.json
+              test "$action" = reused || test "$action" = installed
+            elif [ "$family" = chrome ]; then
+              policy=/etc/opt/chrome/policies/managed/wfs-required-extensions.json
+            else exit 25; fi
+            test -s "$policy"
+            grep -Fq "ExtensionInstallForcelist" "$policy"
+            grep -Fq "hlkenndednhfkekhgcdicdfddnkalmdm" "$policy"
+            grep -Fq "fdpohaocaechififmbbbbbknoalclacl" "$policy"
+          '
           docker exec -u 0 wfs-linux-webtop /bin/sh -c 'command -v npm && command -v node && command -v 9router && command -v codex'
           grep -F $'9Router\tINSTALLED' "$RUNNER_TEMP/wfs-linux/apps-status.tsv"
           grep -F $'Codex CLI\tINSTALLED' "$RUNNER_TEMP/wfs-linux/apps-status.tsv"
