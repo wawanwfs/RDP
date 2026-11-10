@@ -3,6 +3,7 @@
 # Verify release metadata and binary SHA-256 before native package installation.
 set -Eeuo pipefail
 distro="$WFS_DISTRO"
+[ "$distro" = igos-nusantara ] && distro=ubuntu  # outer RDP shell only
 case "$distro" in
   ubuntu|debian) format=deb ;;
   fedora) format=rpm ;;
