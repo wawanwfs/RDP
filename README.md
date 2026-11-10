@@ -2,90 +2,204 @@
 
 # 🖥️ WFS Remote Workspaces
 
-### Windows RDP/noVNC + Linux Desktop • Tailscale • GitHub Actions
+**Windows & Linux · Native RDP / XRDP · Browser Remote · Tailscale · GitHub Actions**
 
-**Dua workflow terpisah untuk desktop Windows dan Linux sementara, dengan akses privat melalui Tailscale.**
+**Deploy a temporary cloud desktop, choose the apps you need, connect privately, and keep the runner alive for the active session.**
 
-[![Windows Workspace](https://img.shields.io/github/actions/workflow/status/wawanwfs/RDP/windows-remote-workspace-with-apps.yml?branch=main&style=for-the-badge&logo=githubactions&label=Windows%20Workspace)](https://github.com/wawanwfs/RDP/actions/workflows/windows-remote-workspace-with-apps.yml)
-[![Linux Workspace](https://img.shields.io/github/actions/workflow/status/wawanwfs/RDP/linux-remote-workspace.yml?branch=main&style=for-the-badge&logo=linux&label=Linux%20Workspace)](https://github.com/wawanwfs/RDP/actions/workflows/linux-remote-workspace.yml)
-[![Windows](https://img.shields.io/badge/Windows-2022%20%7C%202025-0078D4?style=for-the-badge&logo=windows)](https://github.com/wawanwfs/RDP/actions)
-[![Tailscale](https://img.shields.io/badge/Tailscale-Private%20Tailnet-242424?style=for-the-badge)](https://tailscale.com/)
-[![PowerShell](https://img.shields.io/badge/PowerShell-7-5391FE?style=for-the-badge&logo=powershell)](https://learn.microsoft.com/powershell/)
+[![Windows Workflow](https://img.shields.io/github/actions/workflow/status/wawanwfs/RDP/windows-remote-workspace-with-apps.yml?branch=main&style=for-the-badge&logo=windows&label=Windows)](https://github.com/wawanwfs/RDP/actions/workflows/windows-remote-workspace-with-apps.yml)
+[![Linux CI](https://img.shields.io/github/actions/workflow/status/wawanwfs/RDP/linux-workspace-checks.yml?branch=main&style=for-the-badge&logo=linux&label=Linux%20CI)](https://github.com/wawanwfs/RDP/actions/workflows/linux-workspace-checks.yml)
+[![Remote](https://img.shields.io/badge/Remote-RDP%20%7C%20Web-735DE2?style=for-the-badge)](https://github.com/wawanwfs/RDP/actions)
+[![Tailscale](https://img.shields.io/badge/Network-Tailscale%20Private-242424?style=for-the-badge)](https://tailscale.com/)
 
-[**▶ Windows Workspace**](https://github.com/wawanwfs/RDP/actions/workflows/windows-remote-workspace-with-apps.yml) · [**▶ Linux Workspace**](https://github.com/wawanwfs/RDP/actions/workflows/linux-remote-workspace.yml) · [Lihat Actions](https://github.com/wawanwfs/RDP/actions) · [Atur Repository Secrets](https://github.com/wawanwfs/RDP/settings/secrets/actions)
+### ▶️ Choose your remote environment
+
+| 🪟 Windows Workspace | 🐧 Linux Workspace |
+|:---:|:---:|
+| [**▶ Launch Windows**](https://github.com/wawanwfs/RDP/actions/workflows/windows-remote-workspace-with-apps.yml) | [**▶ Launch Linux**](https://github.com/wawanwfs/RDP/actions/workflows/linux-remote-workspace.yml) |
+| Default: Windows 2025 + RDP | **Default: Ubuntu + KDE Plasma + XRDP** |
+| RDP / noVNC / Both | XRDP / Webtop Selkies / Both |
+| Native Windows applications | Native Linux apps; Windows MT4/MT5 via Wine |
+| [Windows guide ↓](#-windows-remote-workspace) | [**Complete Linux guide**](linux/README.md) |
+
+[**All workflow runs**](https://github.com/wawanwfs/RDP/actions) · [**Repository secrets**](https://github.com/wawanwfs/RDP/settings/secrets/actions) · [**Linux verification**](https://github.com/wawanwfs/RDP/actions/workflows/linux-workspace-checks.yml)
 
 </div>
 
 ---
 
-## 🇮🇩 IGOS Nusantara 26 Ciremai — original ISO in QEMU (experimental)
+## 🧭 Overview
 
-Pilihan baru **`distro = igos-nusantara`** pada [Linux Remote Workspace](https://github.com/wawanwfs/RDP/actions/workflows/linux-remote-workspace.yml) menjalankan **ISO resmi IGN 26 Beta 6** di VM QEMU. Ini bukan image Fedora/Ubuntu yang diberi nama IGOS. Sistem host tetap Ubuntu 24.04 + Webtop Xfce untuk autentikasi **XRDP/RDP**, Google Chrome dan ekstensi wajib, sedangkan jendela fullscreen RDP menampilkan desktop IGOS asli melalui viewer VNC lokal. Tekan **F8** (menu viewer) atau keluar dari fullscreen untuk mengakses desktop host/Chrome bila perlu.
+WFS Remote Workspaces menyediakan **dua workflow utama** yang dikelola terpisah dalam satu repository: Windows dan Linux. Workflow lain yang masih tersimpan di `.github/workflows/` adalah varian/legacy dan **bukan** titik masuk yang disarankan untuk dua workspace utama ini.
 
-- **Default remote Linux sekarang `rdp`**, alamat `100.x.x.x:3389` via Tailscale, user default `RDP` (huruf kapital), hostname `rdp-runner`.
-- **Khusus pilihan IGOS** gunakan `remote_access=rdp` (opsi `novnc`/`both` tetap tersedia untuk distro Webtop lain). Desktop dan aplikasi pilihan di workflow dipasang pada **host XRDP**, bukan di dalam guest ISO IGOS.
-- ISO `https://r2.igos-nusantara.or.id/iso/beta/ign26-bayu-beta6.iso` (~1,2 GB) diunduh dari situs resmi. SHA256 hasil unduhan dicatat, tetapi **belum dipin terhadap checksum penerbit**; jangan gunakan ISO ini untuk data sensitif sebelum digest tepercaya tersedia.
-- IGN 26 membutuhkan AVX2 dan UEFI. GitHub-hosted runner biasanya tidak menyediakan KVM; QEMU memakai emulasi CPU sehingga boot BAYU bisa lambat/tidak berhasil. **Tes yang sekarang tersedia hanya validasi statis dan kesiapan proses QEMU/VNC, bukan bukti boot desktop IGOS**. Gunakan Debian/Xfce jika memerlukan workspace RDP yang lebih teruji.
-- Guest QEMU tidak mengekspos VNC ke internet/Tailscale; hanya viewer lokal di container yang terhubung. Sesi berakhir bersama runner; tidak persisten.
-
-Baca [panduan Linux dan batasan IGOS](linux/README.md) serta [dokumentasi IGN 26 resmi](https://igos-nusantara.or.id/docs/id/).
-
-## 🐧 Linux Remote Workspace — RDP / noVNC / Both
-
-Workflow Linux berjalan **terpisah** dari Windows, tetap memakai Tailscale, GitHub Actions Keep Alive, dan aplikasi pilihan. Distro adalah container pada host Ubuntu 24.04. Pilihan **Debian, Ubuntu, Fedora, Arch, Alpine** dikombinasikan dengan desktop **Xfce, MATE, KDE, i3** (20 kombinasi GUI browser).
-
-| Perbandingan | 🪟 Windows | 🐧 Linux |
+| Aspek | 🪟 Windows | 🐧 Linux |
 |:--|:--|:--|
-| Jenis remote | RDP / noVNC / Both | **RDP / noVNC (Selkies web) / Both** |
-| RDP | Windows Remote Desktop | xrdp, port 3389 melalui Tailscale |
-| Browser | TightVNC + noVNC | Webtop Selkies, HTTPS 443 atau TLS/TCP 6082 |
-| Password RDP | Secret `RDP_PASSWORD` | **Secret yang sama** |
-| Password browser | Secret `VNC_PASSWORD` | **Secret yang sama** |
-| Password mode | Secret tetap / acak per run | Secret tetap / acak per run, **tidak dicetak di log publik** |
-| Nama runner | Hostname + mode tetap/unik | Hostname + mode tetap/unik |
-| Nama akun RDP | `RDP` | Dapat diubah (default **`RDP`**, huruf besar) |
-| Nama login browser | Password VNC | Dapat diubah (default `wfs`) |
-| Durasi | 1 / 3 / 6 jam | 1 / 3 / 6 jam; job maksimal 360 menit |
-| Aplikasi | IDE, editor, MetaTrader, router, agent, ArtCraft | **Menu kategori sama**; instalasi hanya bila kompatibel |
+| Main workflow | [windows-remote-workspace-with-apps.yml](.github/workflows/windows-remote-workspace-with-apps.yml) | [linux-remote-workspace.yml](.github/workflows/linux-remote-workspace.yml) |
+| GitHub-hosted runner | Windows yang dipilih | Ubuntu 24.04 host + Webtop container sesuai distro |
+| Default desktop | Windows desktop | **Ubuntu KDE Plasma** |
+| Default remote | **RDP** | **XRDP** |
+| Remote browser | TightVNC + noVNC | LinuxServer Webtop + Selkies |
+| Akun RDP bawaan | `RDP` | `RDP` (case-sensitive) |
+| Hostname Tailscale bawaan | `rdp-runner` | `rdp-runner` |
+| Port RDP | TCP `3389` | TCP `3389` |
+| Web remote privat | TCP `6082` atau HTTPS `443` | HTTPS `6082` atau `443` |
+| Durasi pilihan | 1 / 3 / 6 jam | 1 / 3 / 6 jam |
+| Batas maksimal GitHub job | **360 menit total**, termasuk instalasi | **360 menit total**, termasuk instalasi |
+| Session persist setelah run berakhir? | Tidak | Tidak |
+| MetaTrader | Installer Windows | **Wine + installer MetaQuotes**, verifikasi binary |
+| Perangkat untuk mengakses | Windows, Mac, Android/iOS dengan klien remote | Windows, Mac, Android/iOS dengan klien remote |
 
-**Aplikasi Linux:** pilihan VS Code/Antigravity, CapCut/Shotcut, MT4/MT5, 9Router/OmniRoute, Codex/Claude, Hermes/OpenClaw/OpenCode, ArtCraft, serta paket Developer/Office/Media. Installer mengeluarkan status **INSTALLED**, **FAILED**, **MANUAL**, atau **UNSUPPORTED** per aplikasi. CapCut native Linux dan MetaTrader native bukan instalasi Linux resmi yang dapat dianggap berhasil otomatis; lihat Summary.
+> [!IMPORTANT]
+> **Runner GitHub bukan VPS permanen.** Ketika job berakhir/dibatalkan, desktop, aplikasi, dan file lokal sementara akan hilang. Jangan menyimpan satu-satunya salinan data, bot, profil browser, akun, atau Expert Advisor di runner. **Jangan gunakan workflow ini untuk trading live tanpa backup dan pengawasan.**
 
-**Perhatian:** mode noVNC pada Linux adalah **Selkies Webtop**, bukan server VNC klasik. RDP menggunakan sesi Xorg/Xfce terpisah, sehingga **RDP dan browser tidak otomatis menampilkan satu layar yang sama**. Arch Linux xrdp tidak tersedia dari repositori resmi yang dipakai script; gunakan `novnc` di Arch. Fitur xrdp distro lain masih memerlukan pengujian runtime.
+## 🧩 Architecture
 
-**Perbaikan xrdp + ekstensi Chrome (10 November 2026):** akun RDP Linux sekarang menggunakan **`RDP` kapital**, sama dengan Windows, tanpa normalisasi ke huruf kecil. Installer memasang komponen desktop Xfce lengkap (`xfwm4`, `xfdesktop`, panel, DBus) dan launcher sesi khusus untuk mengatasi layar hitam setelah login; CI juga menguji login grafis dengan FreeRDP. **Google Chrome wajib** dipasang beserta kebijakan pemasangan otomatis **Cookie-Editor** dan **GoFullPage**, sama dengan workflow Windows (Chromium dipakai pada distro tanpa Chrome resmi). Unduhan ekstensi berjalan ketika Chrome pertama kali dibuka; periksa `chrome://policy` dan `chrome://extensions`. [Panduan dan status tes Linux](linux/README.md).
+```text
+                               YOUR DEVICE
+                    ┌──────────────────────────────┐
+                    │ Windows / Android / macOS     │
+                    │ RDP client / browser          │
+                    └───────────────┬──────────────┘
+                                    │
+                       Tailscale PRIVATE tailnet
+                                    │
+               ┌────────────────────┴──────────────────┐
+               │                                       │
+    ┌──────────▼───────────┐               ┌───────────▼─────────┐
+    │ WINDOWS WORKFLOW     │               │ LINUX WORKFLOW      │
+    │ Windows runner       │               │ Ubuntu runner       │
+    │ Native RDP :3389     │               │ Docker Webtop       │
+    │ TightVNC + noVNC     │               │ XRDP :3389          │
+    │ Web :6082 / :443     │               │ Selkies :6082/443   │
+    │ Native Windows apps  │               │ KDE / Xfce / MATE   │
+    │ Windows MT4/MT5      │               │ i3 / Ubuntu LXQt    │
+    └──────────────────────┘               │ Wine MT4 / MT5      │
+                                           └─────────────────────┘
+```
 
-**Output Linux kini setara dengan Windows:** Actions **Summary** menampilkan dashboard lengkap untuk **RDP/browser URL, username, password mode (tanpa membocorkan isi secret), hostname/IP Tailscale, health checks, distro/desktop, status setiap aplikasi, durasi, dan troubleshooting**. Langkah **Remote READY** juga menampilkan banner koneksi dan heartbeat kesehatan setiap menit. **Hostname** dapat diketik pada `tailscale_hostname` dengan default **`rdp-runner`** (mode default `same_each_run` mempertahankan nama yang sama pada setiap run). **Username RDP** default adalah **`RDP`**, sementara username browser tetap **`wfs`** dan dapat diubah.
+Native Linux container **tidak menggunakan QEMU**. Sesi XRDP menjalankan desktop **X11 sesuai pilihan**. Browser/Webtop berjalan sebagai sesi terpisah; mengaktifkan `both` **tidak** berarti kedua koneksi mencerminkan layar yang sama.
 
-[**▶ Jalankan Linux Remote Workspace**](https://github.com/wawanwfs/RDP/actions/workflows/linux-remote-workspace.yml) · [**Panduan lengkap Linux, password per run, dan daftar app**](linux/README.md)
+## 🔐 First-time setup — sekali untuk kedua workflow
+
+1. Pastikan [Tailscale](https://tailscale.com/download) aktif pada PC/HP yang akan digunakan mengakses desktop. Siapkan auth key dari [Tailscale Admin](https://login.tailscale.com/admin/settings/keys) dengan cakupan dan masa berlaku minimum yang diperlukan.
+2. Buka **[Settings → Secrets and variables → Actions](https://github.com/wawanwfs/RDP/settings/secrets/actions)** di repository.
+3. Tambahkan nama secret **persis** seperti tabel. Simpan **nilai** hanya di GitHub Secrets, jangan di YAML/README.
+4. Pilih workflow Windows atau Linux → **Run workflow** di branch `main`.
+5. Setelah langkah instalasi dan koneksi siap, buka **Actions run → Summary** untuk membaca IP/URL tailnet, port, username, password *mode*, dan status masing-masing aplikasi.
+6. Sambungkan melalui klien RDP atau browser. Gunakan **Cancel workflow** untuk mengakhiri sesi lebih cepat.
+
+| GitHub Actions secret | Fungsi | Catatan |
+|:--|:--|:--|
+| `TAILSCALE_AUTH_KEY` | Menghubungkan runner ke tailnet privat | Diperlukan untuk keduanya |
+| `RDP_PASSWORD` | Password native RDP Windows dan XRDP Linux | Dipakai jika mode `same_from_secret` |
+| `VNC_PASSWORD` | Password remote browser/noVNC | Dipakai jika mode `same_from_secret` |
+
+**Default akun Windows dan Linux adalah `RDP` kapital.** Linux membedakan `RDP` dan `rdp` sebagai dua akun berbeda. Password tidak diambil dari username, dan nilai secret tidak boleh ditempel di issue, log publik atau screenshot.
+
+**Password mode:** `same_from_secret` mempertahankan password rahasia yang sama pada setiap run. `random_each_run` tersedia di kedua workflow tetapi implementasi pelaporan berbeda; **pada Windows password acak dapat tercetak di Actions log pada repo publik**. Pada Linux password per-run diturunkan dari HMAC-SHA256 secret + Run ID, dan **tidak dicetak**. Untuk Linux, petunjuk perhitungan di PC lokal tersedia di [panduan Linux](linux/README.md).
+
+## 🐧 Linux Workspace — premium desktop without VM
+
+<Image omitted; interface screenshots are produced by your actual run.>
+
+**Rekomendasi bawaan: Ubuntu Webtop + KDE Plasma + XRDP.** KDE menawarkan tampilan modern; Ubuntu menyediakan jalur paket Wine/MetaTrader dan IDE Linux yang lebih mudah. Browser Webtop dan XRDP KDE menggunakan sesi yang **berbeda**, namun keduanya dapat mengakses container yang sama. Instalasi KDE via X11 berbeda dari desktop Wayland pada browser dan memiliki smoke test tersendiri.
+
+| Distro asli (Webtop container) | KDE Plasma | Xfce | MATE | i3 | LXQt | Catatan XRDP |
+|:--|:--:|:--:|:--:|:--:|:--:|:--|
+| **Ubuntu — default** | ✅ | ✅ | ✅ | ✅ | ✅ | Desktop X11; direkomendasikan |
+| Debian | ✅ | ✅ | ✅ | ✅ | — | Desktop X11 |
+| Fedora | ✅ | ✅ | ✅ | ✅ | — | Kebutuhan paket/X11 bervariasi |
+| Arch | ✅ | ✅ | ✅ | ✅ | — | Web mode; native XRDP belum diaktifkan |
+| Alpine | ✅ | ✅ | ✅ | ✅ | — | KDE Wayland-only untuk browser; XRDP KDE tidak diaktifkan |
+
+Distro native memakai tag [LinuxServer Webtop](https://docs.linuxserver.io/images/docker-webtop/), **bukan** VM dan bukan OS Windows yang disamarkan. Opsi ISO eksperimental lama tetap dapat dipilih secara terpisah (`igos-nusantara`) tetapi tidak dijadikan default atau bagian dari matriks native; boot GUI guest belum terverifikasi.
+
+### Default values
+
+| Input Linux | Default | Opsi lain |
+|:--|:--|:--|
+| `distro` | **`ubuntu`** | debian / fedora / arch / alpine / `igos-nusantara` eksperimen |
+| `desktop` | **`kde`** | xfce / mate / i3 / `lxqt` (Ubuntu only) |
+| `remote_access` | **`rdp`** | novnc / both |
+| `rdp_username` | **`RDP`** | Akun Linux case-sensitive |
+| `web_username` | `wfs` | Username web Linux |
+| `tailscale_hostname` | `rdp-runner` | Lowercase, digit, tanda `-` |
+| `hostname_mode` | `same_each_run` | unique_each_run |
+| `duration_hours` | `6` | 1 / 3 |
+| `metatrader_choice` | `none` | mt4 / mt5 / both |
+| `apps_bundle` | `none` | developer / office / media / all |
+
+### 📈 MetaTrader installation — no fake success status
+
+Saat `metatrader_choice=mt4`, `mt5`, atau `both`, workflow memanggil [`linux/install-metatrader.sh`](linux/install-metatrader.sh) secara otomatis **setelah desktop XRDP disiapkan**. Script memasang Wine/Xvfb dari repositori distro, mengunduh installer dari CDN MetaQuotes HTTPS, menyiapkan prefix Wine terpisah, mencoba instalasi tanpa interaksi, mencari **terminal MetaTrader yang benar**, lalu membuat launcher dan shortcut bila executable ditemukan.
+
+- **MT5:** installer `mt5setup.exe /auto` resmi; hanya dinyatakan `INSTALLED` jika `terminal64.exe` yang benar, launcher, dan shortcut ada.
+- **MT4:** installer MetaQuotes dicoba, tetapi beberapa rilis/tautan MT4 pernah mengarah ke MT5; script **menolak menyatakan MT4 terpasang** ketika executable MT4 tidak terbukti ada. Jika gagal, unduh paket MT4 terkini dari broker resmi di dalam desktop.
+- **Windows:** MT4/MT5 memakai installer Windows native; tidak memerlukan Wine.
+- **Linux:** Chrome dan ekstensi wajib berada di sistem Linux yang dipilih, sedangkan opsi guest ISO eksperimen memasangnya pada host XRDP, **bukan** otomatis di guest.
+- **Tidak ada** broker login, password akun trading, EA, atau aktivasi auto-trade yang dilakukan oleh workflow. Pemasangan file bukan bukti terminal benar-benar dapat dipakai trading; buka shortcut dan cek koneksi secara manual.
+
+Installer bisa berstatus `INSTALLED`, `FAILED`, atau `UNSUPPORTED` per terminal. Bila app opsional gagal, remote tetap disediakan dan penyebabnya tampil di **Actions Summary**. Wine di Alpine tidak didukung oleh tahap ini. Untuk Linux trading terminal terbaik gunakan **Ubuntu**.
+
+### 📦 Application selection
+
+| Menu | Windows | Linux |
+|:--|:--|:--|
+| IDE | VS Code, Antigravity | VS Code / Antigravity Linux (jika tersedia) |
+| Video | CapCut, Shotcut | Shotcut; CapCut native **unsupported** |
+| Trading | MT4, MT5 | MT4, MT5 lewat Wine + pemeriksaan binary |
+| AI Router | 9Router, OmniRoute | 9Router, OmniRoute jika dependensi tersedia |
+| Coding | Codex CLI, Claude Code | Codex CLI, Claude Code |
+| Agents | Hermes, OpenClaw, OpenCode | Hermes, OpenClaw, OpenCode |
+| Creative | ArtCraft Launcher | ArtCraft Launcher dengan dukungan paket distro |
+| Bundle | Paket aplikasi opsional | Developer / Office / Media / All |
+| Browser wajib | Chrome + extensions | Chrome / Chromium + Cookie-Editor dan GoFullPage |
+
+**Catatan:** memilih aplikasi berarti **meminta** pemasangan, bukan menjamin aplikasi lolos. Periksa status masing-masing aplikasi di Summary. Ekstensi Chrome diunduh ketika profile browser pertama dibuka dan jaringan ke Chrome Web Store tersedia.
+
+### 🔌 How to connect
+
+**RDP/XRDP — Windows PC:** `Win + R` → `mstsc` → alamat `100.x.x.x:3389` dari Summary → pengguna `RDP` → password secret. Pastikan Tailscale PC menyala. Untuk RDP Linux, pilih sesi **Xorg** di menu XRDP bila ditampilkan.
+
+**Browser remote — Windows/Android:** pilih `remote_access=novnc` atau `both`, lalu buka URL **yang benar-benar dicetak di Summary**. Webtop Linux memakai `https://100.x.x.x:6082/` pada fallback TLS self-signed atau domain tailnet HTTPS 443 jika diaktifkan. Windows noVNC memakai jalur `/vnc.html` pada transport yang dipilih. Jangan menganggap port HTTPS/Linux sama dengan Windows HTTP/noVNC.
+
+## 🧪 Quality gates & honest status
+
+| Evidence | Kegunaan | Batasan |
+|:--|:--|:--|
+| [Linux CI](https://github.com/wawanwfs/RDP/actions/workflows/linux-workspace-checks.yml) | Bash syntax, YAML, security assertions, Webtop HTTPS, RDP/Xorg smoke tests | Per-run results can change; check latest HEAD |
+| Default KDE XRDP smoke | Login FreeRDP dan proses KDE X11 | Tidak menjamin setiap GPU/klien remote sama |
+| Debian Xfce smoke | Verifikasi baseline dan kompatibilitas | Tidak membuktikan semua distro/desktop |
+| Wine status per terminal | Pemeriksaan executable MT4 atau MT5 yang terpasang | Tidak membuktikan login broker, chart rendering, EA, atau runtime uptime |
+| [Windows workflow](https://github.com/wawanwfs/RDP/actions/workflows/windows-remote-workspace-with-apps.yml) | Full Windows setup, app installs, session dashboard | Lihat log dan Summary run aktual |
+
+Status `Remote READY` berarti layanan pada runner telah diperiksa. **Bukan** jaminan perangkat eksternal berhasil login. Status `INSTALLED` Wine memeriksa file terminal, bukan penyelesaian UI/trading end-to-end.
+
+## 🔒 Networking, session lifecycle, and safety
+
+- RDP dan web diakses **hanya dari tailnet pribadi** sesuai ACL/grants; tidak menggunakan Tailscale Funnel atau akses publik langsung.
+- Linux Webtop Docker bind pada loopback runner, dan forwarder hanya pada alamat IPv4 Tailscale. Windows membatasi RDP melalui firewall/Tailscale.
+- Hindari password lemah; gunakan auth key Tailscale minimal privilege. Jangan membuka port 3389/5900/6082 ke internet publik atau mengunggah screenshot credential.
+- **1/3/6 jam** adalah pilihan durasi sesi. Batas total workflow **360 menit sejak job dimulai**, sehingga setup mengurangi waktu tersisa. Keep Alive bekerja selama runner masih berjalan.
+- Klik **Cancel workflow** untuk menutup sesi. Cleanup menghapus container dan file rahasia sementara sebatas yang dapat dibersihkan sebelum job dihentikan.
+- Jika run gagal, cek **job yang gagal**, bukan hanya status hasil akhir; paket GUI/Wine besar dapat melebihi waktu setup pada hosted runner.
+
+## 🆘 Quick troubleshooting
+
+| Gejala | Cek |
+|:--|:--|
+| `RDP` user doesn't exist | Gunakan huruf kapital; periksa langkah XRDP PAM dan kesesuaian `rdp_username` |
+| Login sukses tetapi blank/black | Lihat `/home/RDP/.wfs-xrdp-session.log`, hasil smoke desktop terpilih dan paket X11 |
+| KDE tidak tampil / malah Xfce | Pastikan run menggunakan commit terbaru; lihat `WFS_RDP_DESKTOP_READY` di Summary |
+| MetaTrader tidak tampak | Periksa step **Install selected MetaTrader** dan baris `INSTALLED/FAILED` per terminal |
+| MT4 malah MT5 | Gunakan installer MT4 dari broker tepercaya; verifikasi executable `terminal.exe` yang sesuai |
+| NoVNC tidak membuka URL | Pastikan memilih `novnc`/`both`, Tailscale terhubung, baca URL aktual |
+| Tailscale connect timeout | Cek `TAILSCALE_AUTH_KEY`, ACL/grants, status node serta rute tailnet |
+| `RDP`/port tidak terbuka | Uji `Test-NetConnection 100.x.x.x -Port 3389` dari PowerShell |
+| Sesi tiba-tiba berhenti | Lihat batas 360 menit, log Keep Alive, Cancel/timeout status |
+
+Untuk panduan Linux yang lebih mendalam, password per-run dan detail paket, baca **[`linux/README.md`](linux/README.md)**. Rincian workflow Windows ada di bagian selanjutnya.
 
 ---
-
-## 📘 Panduan cepat dua workflow dan error terbaru
-
-| Fitur | Windows | Linux |
-|:--|:--|:--|
-| Run workflow | [Windows Actions](https://github.com/wawanwfs/RDP/actions/workflows/windows-remote-workspace-with-apps.yml) | [Linux Actions](https://github.com/wawanwfs/RDP/actions/workflows/linux-remote-workspace.yml) |
-| Remote | `rdp`, `novnc`, `both` | `rdp`, `novnc` (web Selkies), `both` |
-| Username | `RDP` untuk remote Windows | `rdp_username` (default **`RDP`**) / `web_username` (default `wfs`) |
-| Hostname | `tailscale_hostname`, mode tetap/unik | `tailscale_hostname`, mode tetap/unik |
-| Password | `RDP_PASSWORD` dan `VNC_PASSWORD` | **Secret yang sama**, mode tetap/acak per run |
-| Durasi | 1/3/6 jam | 1/3/6 jam |
-| Aplikasi | VS Code/Antigravity, CapCut/Shotcut, MT4/MT5, AI agent/router, ArtCraft | Menu pilihan sama, instalasi sesuai kompatibilitas distro |
-
-**Gunakan [Repository Secrets](https://github.com/wawanwfs/RDP/settings/secrets/actions)** untuk `TAILSCALE_AUTH_KEY`, `RDP_PASSWORD`, dan `VNC_PASSWORD`. Linux tidak memerlukan `LINUX_DESKTOP_PASSWORD`. Untuk mode acak, Linux menurunkan password dari secret asal dan Run ID tanpa mencetaknya di log; cara menghitungnya terdapat pada [panduan Linux lengkap](linux/README.md).
-
-**Alamat akses:** Windows noVNC TCP 6082 menggunakan `http://100.x.x.x:6082/vnc.html`, sedangkan Linux Webtop TCP 6082 menggunakan **HTTPS self-signed** di `https://100.x.x.x:6082/`. RDP keduanya lewat port TCP 3389 melalui Tailscale; Linux menggunakan xrdp, dengan sesi yang terpisah dari desktop browser.
-
-**Perbaikan Linux 9 November 2026:** ketika Tailscale Serve belum diaktifkan oleh admin tailnet, workflow Linux tidak lagi memerlukan persetujuan Serve untuk mode `auto`/`tailnet_tls_tcp`. Port HTTPS Webtop `6082` dan xrdp `3389` diteruskan oleh proxy TCP yang **hanya diikat pada alamat IPv4 Tailscale runner** (`100.x.x.x`), sementara port Docker tetap hanya pada `127.0.0.1`. HTTPS 443 melalui Tailscale Serve tetap opsional dan hanya digunakan jika sudah tersedia. Untuk akses browser fallback, sertifikat Webtop bersifat self-signed. [Lihat pengujian integrasi Linux](https://github.com/wawanwfs/RDP/actions/workflows/linux-workspace-checks.yml).
-
-**Daftar aplikasi Linux:** VS Code dicoba via repo Microsoft pada Debian/Ubuntu; Shotcut via paket distro; Codex/Claude/OpenClaw/OpenCode dan AI router melalui npm; Antigravity IDE melalui arsip Linux resmi Google; Hermes CLI melalui installer resmi Nous Research noninteraktif; ArtCraft melalui paket resmi terverifikasi. MetaTrader 4/5 tetap memerlukan Wine dan tahapan GUI manual, sedangkan CapCut native Linux tidak didukung. Installer kini memverifikasi executable satu per satu dan melaporkan `INSTALLED`, `FAILED`, `MANUAL`, atau `UNSUPPORTED` secara terpisah; kegagalan paket opsional tidak menghentikan remote.
-
-**Log terbaru:** [run Linux #42536911372](https://github.com/wawanwfs/RDP/actions/runs/42536911372) gagal di Tailscale karena `--accept-routes=false` dikirim dua kali (`flag provided multiple times`). Duplikat tersebut **sudah dihapus** pada [commit ee689ad](https://github.com/wawanwfs/RDP/commit/ee689ad539f4e89046495ffa4e2e967a6701b6d3). [CI Linux #42537213939](https://github.com/wawanwfs/RDP/actions/runs/42537213939) lulus tiga job, tetapi login Tailscale end-to-end dari klien lain masih perlu diuji pada workflow run baru.
-
-**Troubleshooting:** gunakan IP/URL dari run aktif; cek Tailscale ACL/grants, opsi remote dan port 3389/6082; gunakan F11 untuk fullscreen; hindari menutup proses runner; dan backup data karena job dibatasi total 360 menit termasuk instalasi. Untuk detail setiap input distro, desktop, username, hostname, dan password, baca [Linux README](linux/README.md) atau langsung [YAML Linux](.github/workflows/linux-remote-workspace.yml) dan [YAML Windows](.github/workflows/windows-remote-workspace-with-apps.yml).
-
----
-**Perbaikan xrdp Linux:** username `RDP` kapital dipertahankan apa adanya; akun Linux case-sensitive dan diverifikasi sebelum endpoint siap. Setup kemudian menguji akun Unix melalui `id/getent passwd` dan memverifikasi login **PAM xrdp-sesman** menggunakan secret `RDP_PASSWORD` sebelum endpoint dinyatakan siap. Untuk aplikasi Ubuntu, instalasi `npm` distro yang bentrok dengan NodeSource Node.js 22 sudah dihindari. Cache root di volume container dibersihkan dengan aman saat cleanup. [Detail audit dan kompatibilitas](linux/README.md).
 
 ## 🪟 Windows Remote Workspace
 
