@@ -16,6 +16,18 @@
 
 ---
 
+## 🇮🇩 Mode IGOS Nusantara 26 Ciremai — experimental ISO guest
+
+**Opsi baru:** `distro=igos-nusantara`; pilih **`remote_access=rdp`** (nilai default baru) lalu `desktop=xfce`. Workflow menggunakan Ubuntu Xfce Webtop sebagai **outer XRDP shell** yang men-download dan menjalankan **ISO IGN 26 Beta 6 asli** di QEMU (UEFI/OVMF). Sesi XRDP membuka **VNC viewer fullscreen** ke console VM IGOS melalui `127.0.0.1:5901` di dalam container; port VNC **tidak diteruskan** ke runner/Tailscale/internet. Untuk keluar dari viewer dan mengakses shell XFCE luar, gunakan menu F8 pada TigerVNC atau tutup jendelanya.
+
+**Komponen yang berjalan di mana?** Desktop BAYU, Bayu Store, dan fitur IGOS ada **di VM**, bila boot berhasil. Chrome, Cookie-Editor, GoFullPage, VS Code dan seluruh aplikasi `apps_bundle` yang dipilih terinstal pada **outer Ubuntu shell**, **bukan** otomatis pada IGOS. Default akun XRDP `RDP` kapital dan password `RDP_PASSWORD`; hostname Tailscale `rdp-runner`. Mode `novnc`/`both` untuk IGOS sengaja ditolak hingga tersedia jembatan GUI yang diverifikasi; opsi itu tetap berfungsi pada distro yang lain.
+
+**Penting:** IGN 26 membutuhkan arsitektur x86_64 AVX2, UEFI, RAM minimum 4 GB dan ISO berukuran ~1,2 GB. Runner GitHub sering tidak memiliki `/dev/kvm`; QEMU software emulation berpotensi **sangat lambat/tidak bisa boot desktop Wayland**. Workflow memeriksa proses QEMU dan listener VNC, **tidak mengklaim guest BAYU telah berhasil boot**. ISO diambil melalui HTTPS dari situs resmi, ukurannya diperiksa dan digest unduhan dicatat, tetapi digest itu belum diverifikasi terhadap nilai SHA256 yang ditandatangani penerbit. Jangan simpan data penting pada guest ephemeral.
+
+**Uji di Windows:** hubungkan PC ke tailnet, pilih workflow Linux → Run workflow → `distro=igos-nusantara`, `remote_access=rdp`, `rdp_username=RDP` → ambil alamat `100.x.x.x:3389` pada Actions Summary → jalankan `mstsc` dan login. Jika BAYU belum tampil, lihat `/config/wfs-igos-qemu.log` melalui Xfce luar (atau `docker logs` dari runner) dan catatan Actions. Koneksi yang berhasil ke XRDP **bukan bukti** guest ISO telah boot. Dibanding mode IGN eksperimental, distro Debian Xfce adalah jalur yang lebih stabil untuk remote harian.
+
+Referensi: [IGOS 26 resmi](https://igos-nusantara.or.id/id.html) · [Panduan instalasi IGN 26](https://igos-nusantara.or.id/docs/id/) · [Workflow](../.github/workflows/linux-remote-workspace.yml).
+
 ## 🔥 Fitur dan pilihan GUI
 
 Workflow Linux menggunakan **Ubuntu 24.04 GitHub-hosted runner** sebagai host. Distro yang dipilih dijalankan sebagai **container LinuxServer Webtop**, bukan VM/kernel distro terpisah. UI browser memakai Selkies, sedangkan native RDP memakai **xrdp dengan sesi Xfce tersendiri**.
@@ -122,7 +134,7 @@ Workflow Linux menampilkan **Dashboard** pada tab **Summary** setiap run aktif d
 
 1. Pastikan Tailscale terpasang pada PC/HP yang akan mengakses runner dan secret `TAILSCALE_AUTH_KEY` telah tersedia.
 2. Buka [Linux Remote Workspace Actions](https://github.com/wawanwfs/RDP/actions/workflows/linux-remote-workspace.yml) → **Run workflow** → branch `main`.
-3. Pilih distro, desktop, `remote_access`, hostname dan mode password. Untuk uji awal gunakan Debian, Xfce, `novnc`, `same_from_secret`, dan tanpa aplikasi tambahan.
+3. Pilih distro, desktop, `remote_access`, hostname dan mode password. Untuk uji awal gunakan Debian, Xfce, `rdp`, `same_from_secret`, dan tanpa aplikasi tambahan.
 4. Tunggu **Publish selected private RDP and/or web endpoints through Tailscale**. Lihat **Actions Summary** untuk IP RDP, URL web, username dan jenis password. Jangan memakai URL runner lama.
 5. Untuk RDP: di Windows tekan `Win + R` → `mstsc` → masukkan `100.x.x.x:3389` → login dengan `rdp_username` dan password RDP. Untuk web: buka URL HTTPS dan login dengan `web_username` dan password VNC.
 
