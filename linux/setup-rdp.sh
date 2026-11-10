@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# xrdp runs a separate Xorg/Xfce login from the Selkies web desktop.
+# xrdp starts the selected X11 desktop (KDE, Xfce, MATE, i3 or LXQt).
 # Account names are case-sensitive. In particular, RDP is NOT rdp.
 set -Eeuo pipefail
 die() { printf '::error::[WFS xrdp] %s\n' "$*" >&2; exit 1; }
@@ -15,13 +15,14 @@ case "$WFS_DISTRO" in
   *) die "Unsupported distro for xrdp" ;;
 esac
 docker inspect wfs-linux-webtop >/dev/null || die "Webtop container missing"
-info "Installing complete Xfce desktop, xorgxrdp and validating Linux account '$WFS_RDP_USERNAME'."
-docker exec -i -u 0 wfs-linux-webtop /bin/sh -s -- "$WFS_DISTRO" "$WFS_RDP_USERNAME" <<'IN_CONTAINER'
+info "Installing Xorg/xrdp, selected $WFS_DESKTOP desktop, and validating Linux account '$WFS_RDP_USERNAME'."
+docker exec -i -u 0 wfs-linux-webtop /bin/sh -s -- "$WFS_DISTRO" "$WFS_RDP_USERNAME" "$WFS_DESKTOP" <<'IN_CONTAINER'
 set -eu
 distro="$1"
 # IGN guest is a separate ISO VM; xrdp authenticates on the Ubuntu shell.
 [ "$distro" = igos-nusantara ] && distro=ubuntu
 username="$2"
+desktop="$3"
 export DEBIAN_FRONTEND=noninteractive
 case "$distro" in
   debian|ubuntu)
@@ -46,6 +47,48 @@ case "$distro" in
       xfce4-terminal thunar dbus dbus-x11 shadow pamtester
     ;;
 esac
+# xrdp cannot launch Wayland sessions. Install and validate an actual X11
+# entry point for the selected desktop; never secretly show Xfce for KDE.
+case "$desktop" in
+  kde)
+    case "$distro" in
+      debian|ubuntu)
+        if ! apt-get install -y -qq --no-install-recommends plasma-desktop plasma-session-x11 kwin-x11; then
+          apt-get install -y -qq --no-install-recommends plasma-desktop plasma-workspace-x11 kwin-x11
+        fi
+        ;;
+      fedora)
+        dnf install -y plasma-workspace-x11 kwin-x11 plasma-desktop
+        ;;
+      *) echo "KDE native XRDP unsupported for distro $distro" >&2; exit 29 ;;
+    esac
+    command -v startplasma-x11 >/dev/null || { echo "Missing KDE X11 session (startplasma-x11)" >&2; exit 30; }
+    ;;
+  mate)
+    case "$distro" in
+      debian|ubuntu) apt-get install -y -qq --no-install-recommends mate-session-manager mate-panel marco caja ;;
+      fedora) dnf install -y mate-session-manager mate-panel marco caja ;;
+      alpine) apk add --no-cache mate-session-manager mate-panel marco caja ;;
+    esac
+    command -v mate-session >/dev/null || exit 31
+    ;;
+  i3)
+    case "$distro" in
+      debian|ubuntu) apt-get install -y -qq --no-install-recommends i3-wm i3status dmenu ;;
+      fedora) dnf install -y i3 i3status dmenu ;;
+      alpine) apk add --no-cache i3wm i3status dmenu ;;
+    esac
+    command -v i3 >/dev/null || exit 32
+    ;;
+  lxqt)
+    [ "$distro" = ubuntu ] || { echo "LXQt xrdp requires Ubuntu Webtop" >&2; exit 33; }
+    apt-get install -y -qq --no-install-recommends lxqt-session lxqt-panel openbox pcmanfm-qt
+    command -v startlxqt >/dev/null || exit 34
+    ;;
+  xfce) ;;
+  *) echo "Unsupported desktop session: $desktop" >&2; exit 35 ;;
+esac
+printf '%s\n' "$desktop" > /etc/wfs-rdp-desktop
 for required in xrdp xrdp-sesman xfce4-session xfwm4 xfdesktop dbus-run-session Xorg; do
   command -v "$required" >/dev/null 2>&1 || {
     echo "Required Xfce/Xorg component is absent: $required" >&2; exit 20;
@@ -84,17 +127,48 @@ cat > /usr/local/bin/wfs-xrdp-xfce-session <<'SESSION'
 #!/bin/sh
 set -eu
 unset DBUS_SESSION_BUS_ADDRESS SESSION_MANAGER WAYLAND_DISPLAY
-unset XDG_RUNTIME_DIR
 export XDG_SESSION_TYPE=x11
-export XDG_CURRENT_DESKTOP=XFCE
-export DESKTOP_SESSION=xfce
 export GTK_USE_PORTAL=0
 export XDG_CONFIG_HOME="$HOME/.config"
 mkdir -p "$HOME/.config" "$HOME/.cache"
 exec >> "$HOME/.wfs-xrdp-session.log" 2>&1
-printf '[WFS XRDP] Starting real Xorg/Xfce session as %s on DISPLAY=%s\n' "$(id -un)" "${DISPLAY:-missing}"
+printf '[WFS XRDP] Starting X11 session as %s on DISPLAY=%s\n' "$(id -un)" "${DISPLAY:-missing}"
 [ -n "${DISPLAY:-}" ] || { echo "Xorg DISPLAY not provided by xrdp-sesman"; exit 41; }
-exec dbus-run-session -- xfce4-session
+desktop=$(cat /etc/wfs-rdp-desktop)
+case "$desktop" in
+  kde)
+    export XDG_CURRENT_DESKTOP=KDE
+    export DESKTOP_SESSION=plasma
+    export QT_QPA_PLATFORM=xcb
+    export KWIN_COMPOSE=N
+    export XDG_RUNTIME_DIR="/tmp/wfs-xdg-runtime-$(id -u)"
+    mkdir -p "$XDG_RUNTIME_DIR"
+    chmod 700 "$XDG_RUNTIME_DIR"
+    exec dbus-run-session -- startplasma-x11
+    ;;
+  mate)
+    unset XDG_RUNTIME_DIR
+    export XDG_CURRENT_DESKTOP=MATE DESKTOP_SESSION=mate
+    exec dbus-run-session -- mate-session
+    ;;
+  i3)
+    unset XDG_RUNTIME_DIR
+    export XDG_CURRENT_DESKTOP=i3 DESKTOP_SESSION=i3
+    exec dbus-run-session -- i3
+    ;;
+  lxqt)
+    unset XDG_RUNTIME_DIR
+    export XDG_CURRENT_DESKTOP=LXQt DESKTOP_SESSION=lxqt
+    exec dbus-run-session -- startlxqt
+    ;;
+  xfce)
+    unset XDG_RUNTIME_DIR
+    export XDG_CURRENT_DESKTOP=XFCE DESKTOP_SESSION=xfce
+    exec dbus-run-session -- xfce4-session
+    ;;
+esac
+echo "Invalid desktop selection in /etc/wfs-rdp-desktop" >&2
+exit 44
 SESSION
 chmod 755 /usr/local/bin/wfs-xrdp-xfce-session
 cat > /etc/xrdp/startwm.sh <<'STARTWM'
@@ -119,7 +193,7 @@ fi
 test "$(id -un "$(id -u "$username")")" = "$username"
 test -x /etc/xrdp/startwm.sh
 test -x /usr/local/bin/wfs-xrdp-xfce-session
-echo "[WFS Linux xrdp] PASS: exact Unix account '$username', PAM, xfwm4, xfdesktop, DBus, Xorg and explicit Xfce entry point."
+echo "[WFS Linux xrdp] PASS: selected $desktop X11 entry point + exact Unix account '$username', PAM, xfwm4, xfdesktop, DBus, Xorg and explicit Xfce entry point."
 xrdp-sesman
 xrdp
 IN_CONTAINER
@@ -143,4 +217,5 @@ else:
     raise SystemExit("xrdp not responding; check xrdp-sesman.log and xrdp.log.")
 PY
 echo "WFS_RDP_READY=1" >> "$GITHUB_ENV"
-info "Account and Xfce components verified. Actual GUI login is validated by the separate FreeRDP smoke test, not by TCP alone."
+echo "WFS_RDP_DESKTOP_READY=$WFS_DESKTOP" >> "$GITHUB_ENV"
+info "Account and selected X11 desktop packages verified; live GUI login still requires client smoke testing."
