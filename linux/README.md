@@ -177,13 +177,13 @@ Jika ada aplikasi yang gagal, lihat kolom **Per-Application Results** di GitHub 
 
 ## 📈 MetaTrader 4/5 — installer otomatis dengan verifikasi nyata
 
-Pada menu `metatrader_choice`, pilih `mt4`, `mt5` atau `both`. Tahap tersendiri [`install-metatrader.sh`](install-metatrader.sh) berjalan setelah XRDP dan Chrome siap, tanpa memerlukan instalasi manual via RDP. Wine dan Xvfb diinstal dari repositori distro yang dipilih; installer asli diambil dari CDN MetaQuotes melalui HTTPS, dan prefiks Wine terpisah berada di home user desktop.
+Pada menu `metatrader_choice`, pilih `mt4`, `mt5` atau `both`. Tahap tersendiri [`install-metatrader.sh`](install-metatrader.sh) berjalan setelah XRDP dan Chrome siap, tanpa memerlukan instalasi manual via RDP. Wine dan Xvfb diinstal dari repositori distro yang dipilih; installer MT5 dari MetaQuotes dan MT4 dari tautan resmi Exness melalui HTTPS, dan prefiks Wine terpisah berada di home user desktop.
 
 | Pemilihan | Tindakan | Bukti pemasangan | Catatan |
 |:--|:--|:--|:--|
 | `none` | Tidak ada installer trading | `SKIPPED` | Desktop lebih cepat |
 | `mt5` | `mt5setup.exe /auto` | `terminal64.exe` di direktori MetaTrader 5, launcher, shortcut | Runtime GUI dan koneksi broker tetap harus diuji |
-| `mt4` | Coba `mt4setup.exe /auto` | `terminal.exe` di direktori MetaTrader 4, **bukan MT5** | Beberapa paket publisher pernah menginstal MT5; gunakan installer broker bila terjadi |
+| `mt4` | Coba installer MT4 resmi Exness menggunakan Wine dan parameter `/auto` | `terminal.exe` di direktori MetaTrader 4, **bukan MT5** | Paket MT4 broker Exness resmi; harus diverifikasi sebagai MT4, bukan MT5 |
 | `both` | Dua prefiks Wine independen | Bukti executable/shortcut tiap platform | Dapat berstatus berbeda per platform |
 
 ### Cara membuka terminal
