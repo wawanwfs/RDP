@@ -173,6 +173,9 @@ jobs:
       RDP_USER: RDP
 
     steps:
+      - name: "📦 Checkout shared WFS installers and tests"
+        uses: actions/checkout@v4
+
       - name: ⚡ Optimize Windows Performance
         shell: pwsh
         run: |
@@ -804,69 +807,13 @@ jobs:
               [ValidateSet('mt4', 'mt5')]
               [string] $Version
             )
-
-            $mutex = [Threading.Mutex]::new($false, 'Global\RdpWorkflowWingetInstall')
-            $locked = $false
-            try {
-              try { $locked = $mutex.WaitOne(600000) }
-              catch [Threading.AbandonedMutexException] { $locked = $true }
-              if (-not $locked) { throw '❌ Timed out waiting for MetaTrader installer lock.' }
-            $installerUrl = if ($Version -eq 'mt4') {
-              'https://download.terminal.free/cdn/web/exness.technologies.ltd/mt4/exness4setup.exe'
-            } else {
-              'https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe'
+            # Same checked installer is run by Windows CI, not an untested
+            # inline copy. Start-Job workers inherit GITHUB_WORKSPACE.
+            $script = Join-Path $env:GITHUB_WORKSPACE 'windows/Install-MetaTrader.ps1'
+            if (-not (Test-Path -LiteralPath $script -PathType Leaf)) {
+              throw "Missing shared MetaTrader installer: $script (checkout must run first)"
             }
-
-            $installerPath = Join-Path $env:TEMP "metatrader-$Version-setup.exe"
-            Invoke-WebRequest -Uri $installerUrl -OutFile $installerPath -UseBasicParsing -TimeoutSec 120 -ErrorAction Stop
-
-            if (-not (Test-Path $installerPath)) {
-              throw "❌ MetaTrader $Version installer download did not create a file."
-            }
-
-            $signature = Get-AuthenticodeSignature -FilePath $installerPath
-            if ($signature.Status -ne 'Valid') {
-              throw "❌ MetaTrader $Version installer signature is not valid: $($signature.Status)."
-            }
-
-            $installerExit = Invoke-BoundedInstaller -FilePath $installerPath -Arguments @('/auto') -TimeoutSeconds 300
-            Remove-Item -LiteralPath $installerPath -Force -ErrorAction SilentlyContinue
-
-            if ($installerExit -ne 0) {
-              throw "❌ MetaTrader $Version installer exited with code $($installerExit)."
-            }
-
-            # A zero installer exit is insufficient: some MT4 URLs install MT5 or
-            # install into a broker-branded directory instead of MetaTrader 4.
-            $exeName = if ($Version -eq 'mt4') { 'terminal.exe' } else { 'terminal64.exe' }
-            $folderPattern = if ($Version -eq 'mt4') { '(?i)(exness|metatrader.?4|mt4)' } else { '(?i)(metatrader.?5|mt5)' }
-            $roots = @(
-              $env:ProgramFiles,
-              ${env:ProgramFiles(x86)},
-              (Join-Path $env:USERPROFILE 'AppData\Local\Programs'),
-              (Join-Path $env:SystemDrive 'Users\RDP\AppData\Local\Programs')
-            ) | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -Unique
-            $verified = $null
-            foreach ($root in $roots) {
-              foreach ($directory in @(Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue)) {
-                if ($directory.Name -notmatch $folderPattern -or $directory.Name -match '(?i)metatrader.?5' -and $Version -eq 'mt4') { continue }
-                $binary = Join-Path $directory.FullName $exeName
-                if (Test-Path -LiteralPath $binary -PathType Leaf) { $verified = $binary; break }
-                $binary = Get-ChildItem -LiteralPath $directory.FullName -Filter $exeName -File -Recurse -Depth 2 -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-                if ($binary -and (Test-Path -LiteralPath $binary -PathType Leaf)) { $verified = $binary; break }
-              }
-              if ($verified) { break }
-            }
-            if (-not $verified) {
-              throw "❌ $Version installer returned exit code 0 but did not install a verified $exeName in a compatible vendor folder."
-            }
-            $envName = if ($Version -eq 'mt4') { 'MT4_TERMINAL_EXE' } else { 'MT5_TERMINAL_EXE' }
-            "$envName=$verified" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-            Write-Host "📈 ✅ MetaTrader $Version executable verified: $verified"
-            } finally {
-              if ($locked) { $mutex.ReleaseMutex() }
-              $mutex.Dispose()
-            }
+            & $script -Version $Version -TimeoutSeconds 300 | Out-Host
           }
 
           function Install-ArtCraft {
