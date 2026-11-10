@@ -12,7 +12,7 @@ docker exec -u 0 wfs-linux-webtop id "$account" >/dev/null ||
 # Prerequisites for official script. Do not install npm separately on
 # NodeSource Ubuntu/Debian (it conflicts with the preinstalled Node 22).
 case "$WFS_DISTRO" in
-  debian|ubuntu)
+  debian|ubuntu|igos-nusantara)
     docker exec -u 0 wfs-linux-webtop /bin/sh -c \
       'DEBIAN_FRONTEND=noninteractive apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl git bash python3 libatomic1' ;;
   fedora)
