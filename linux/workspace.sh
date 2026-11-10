@@ -10,7 +10,7 @@ notice() { printf '[WFS Linux] %s\n' "$*"; }
 die() { echo "::error::$*" >&2; exit 1; }
 validate() {
   case "$WFS_DISTRO" in ubuntu|debian|fedora|arch|alpine|igos-nusantara) ;; *) die "Unsupported Linux distro: $WFS_DISTRO";; esac
-  case "$WFS_DESKTOP" in xfce|kde|mate|i3) ;; *) die "Unsupported desktop: $WFS_DESKTOP";; esac
+  case "$WFS_DESKTOP" in xfce|kde|mate|i3|lxqt) ;; *) die "Unsupported desktop: $WFS_DESKTOP";; esac
   case "$WFS_DURATION" in 1|3|6) ;; *) die "Invalid duration";; esac
   case "$WFS_TRANSPORT" in auto|tailnet_https|tailnet_tls_tcp) ;; *) die "Invalid transport";; esac
   case "$WFS_APPS" in none|developer|office|media|all) ;; *) die "Invalid app bundle";; esac
@@ -21,6 +21,12 @@ validate() {
   [[ "$WFS_HOSTNAME_BASE" =~ ^[a-z][a-z0-9-]{0,39}$ ]] || die "Hostname must be 1–40 chars: lowercase letters, numbers and hyphens."
   [[ "$WFS_RDP_USERNAME" =~ ^[a-zA-Z_][a-zA-Z0-9_-]{0,30}$ ]] || die "Invalid Linux RDP username (letters, digits, underscore, hyphen; case-sensitive)."
   [[ "$WFS_WEB_USERNAME" =~ ^[a-z_][a-z0-9_-]{0,30}$ ]] || die "Invalid Linux web username."
+  if [ "$WFS_DESKTOP" = lxqt ] && [ "$WFS_DISTRO" != ubuntu ]; then
+    die "LXQt image is published for Ubuntu only; choose Ubuntu or another desktop."
+  fi
+  if [ "$WFS_DISTRO" = alpine ] && [ "$WFS_DESKTOP" = kde ] && [ "$WFS_REMOTE" != novnc ]; then
+    die "Alpine KDE Webtop is Wayland-only; use web mode or select Ubuntu KDE for XRDP."
+  fi
   if [ "$WFS_DISTRO" = arch ] && [ "$WFS_REMOTE" != novnc ]; then
     die "Arch xrdp requires AUR; choose Debian/Ubuntu/Fedora/Alpine for native RDP or novnc for Arch."
   fi
@@ -237,7 +243,8 @@ publish() {
 summary() {
   local rdp_state="⏭️ Not selected" web_state="⏭️ Not selected"
   local transport_label="Not selected" artcraft_state="⏭️ Not selected"
-  local apps_state="⏭️ Not selected"
+  local apps_state="⏭️ Not selected" trading_state="⏭️ Not selected"
+  local trading_step="${WFS_METATRADER_STEP_OUTCOME:-skipped}"
   local image_digest="${WFS_IMAGE_ID:-not recorded}"
   local run_url="https://github.com/${GITHUB_REPOSITORY:-wawanwfs/RDP}/actions/runs/${GITHUB_RUN_ID:-0}"
   local rdp_url="${WFS_RDP_ADDRESS:-}"
@@ -249,7 +256,7 @@ summary() {
   local artcraft_selected="${WFS_ARTCRAFT_SELECTED:-false}"
 
   if [ "$WFS_REMOTE" = rdp ] || [ "$WFS_REMOTE" = both ]; then
-    rdp_state="✅ Linux account + xrdp PAM authentication + X.224/TCP verified (GUI session not yet tested)"
+    rdp_state="✅ xrdp PAM + X.224/TCP verified; selected ${WFS_RDP_DESKTOP_READY:-xfce} session still requires graphical client validation"
   fi
   if [ "$WFS_REMOTE" = novnc ] || [ "$WFS_REMOTE" = both ]; then
     web_state="✅ Webtop HTTPS HTTP 200 with authentication, verified from runner"
@@ -265,6 +272,12 @@ summary() {
     failure) apps_state="⚠️ Step failed; desktop remote remains available" ;;
     skipped) apps_state="⏭️ Not selected" ;;
     *) apps_state="ℹ️ $app_step" ;;
+  esac
+  case "$trading_step" in
+    success) trading_state="✅ Installer finished; inspect binary verification below" ;;
+    failure) trading_state="⚠️ Trading installer returned failure; inspect per-terminal status" ;;
+    skipped) trading_state="⏭️ Not selected" ;;
+    *) trading_state="$trading_step" ;;
   esac
   if [ "$artcraft_selected" = true ]; then
     if [ "$WFS_DISTRO" = alpine ]; then
@@ -298,7 +311,7 @@ EOF
 | **Username** | \`$WFS_RDP_USERNAME\` |
 | **Password** | GitHub Secret \`RDP_PASSWORD\` — \`$WFS_RDP_PASSWORD_MODE\` |
 | **Service health** | $rdp_state |
-| **Session** | Xorg/Xfce RDP; in IGOS mode a viewer opens the actual ISO guest |
+| **Selected RDP session** | `${WFS_RDP_DESKTOP_READY:-xfce}` (Xorg, independent of web browser session) |
 
 **How to connect:** Open Windows \`mstsc\` → enter \`$rdp_url\` → login as \`$WFS_RDP_USERNAME\`.
 
@@ -342,8 +355,6 @@ IGOS
 | GitHub Actions run | [Open this run]($run_url) |
 | Distro / desktop | **$WFS_DISTRO / $WFS_DESKTOP** |
 | Host runner | Ubuntu 24.04 (ephemeral) |
-| IGOS 26 guest | ${WFS_IGOS_VM_STATUS:-not selected} |
-| IGOS image source | ${WFS_IGOS_ISO:-not selected} |
 | Container image | \`${WFS_IMAGE:-unknown}\` |
 | Container image digest | \`$image_digest\` |
 | **Tailscale hostname** | \`${WFS_HOSTNAME:-unknown}\` |
@@ -385,10 +396,14 @@ IGOS
 | Install step | Result |
 |:--|:--|
 | Optional apps | $apps_state |
+| MetaTrader Wine installation | $trading_state |
 | ArtCraft Launcher | $artcraft_state |
 
 EOF
 
+  if [ -s "$state/trading-status.tsv" ]; then
+    cat "$state/trading-status.tsv" >> "$state/apps-status.tsv"
+  fi
   if [ -s "$state/apps-status.tsv" ]; then
     {
       echo '### 🔎 Per-Application Results'
@@ -471,7 +486,7 @@ keepalive() {
 ✅ Tailscale-only connections are ready to test from your device.
 🔐 Passwords are NEVER displayed in public Actions logs.
 🌐 Webtop browser auto-resizes; use F11 for full screen.
-🖥️ RDP (Xorg) and web (Selkies) are separate desktop sessions.
+🖥️ RDP (Xorg) and web (Selkies) are separate desktop sessions; RDP choice: $WFS_DESKTOP.
 ⏳ The total Actions job limit is 360 minutes, including startup.
 📊 See the GitHub Actions Summary tab for URLs, applications and diagnostics.
 
