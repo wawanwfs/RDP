@@ -69,6 +69,26 @@ jobs:
         terminal: [mt4, mt5]
     steps:
       - uses: actions/checkout@v4
+      - name: "🛡️ Prepare Windows Installer policy (hosted runner only)"
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted') {
+            throw 'Installer policy modifications forbidden outside hosted runners'
+          }
+          if ((Get-CimInstance Win32_ComputerSystem).PartOfDomain) {
+            throw 'Domain-joined runner: refuse MSI policy override'
+          }
+          $key = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\Installer'
+          New-Item -Path $key -Force | Out-Null
+          New-ItemProperty -Path $key -Name DisableMSI -PropertyType DWord -Value 0 -Force | Out-Null
+          New-ItemProperty -Path $key -Name DisableUserInstalls -PropertyType DWord -Value 0 -Force | Out-Null
+          $policy = Get-ItemProperty $key
+          if ($policy.DisableMSI -ne 0 -or $policy.DisableUserInstalls -ne 0) { throw 'MSI policy check failed' }
+          $service = Get-Service msiserver
+          if ($service.StartType -eq 'Disabled') { Set-Service msiserver -StartupType Manual }
+          Start-Service msiserver -ErrorAction Stop
+          Write-Host 'PASS: hosted-runner Windows Installer policy matches production workflow.'
       - name: "📈 Verify signature, install, and confirm terminal binary"
         shell: pwsh
         run: |
