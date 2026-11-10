@@ -9,7 +9,7 @@ rdp_password_file="$state/rdp-password"
 notice() { printf '[WFS Linux] %s\n' "$*"; }
 die() { echo "::error::$*" >&2; exit 1; }
 validate() {
-  case "$WFS_DISTRO" in ubuntu|debian|fedora|arch|alpine) ;; *) die "Unsupported Linux distro: $WFS_DISTRO";; esac
+  case "$WFS_DISTRO" in ubuntu|debian|fedora|arch|alpine|igos-nusantara) ;; *) die "Unsupported Linux distro: $WFS_DISTRO";; esac
   case "$WFS_DESKTOP" in xfce|kde|mate|i3) ;; *) die "Unsupported desktop: $WFS_DESKTOP";; esac
   case "$WFS_DURATION" in 1|3|6) ;; *) die "Invalid duration";; esac
   case "$WFS_TRANSPORT" in auto|tailnet_https|tailnet_tls_tcp) ;; *) die "Invalid transport";; esac
@@ -24,9 +24,8 @@ validate() {
   if [ "$WFS_DISTRO" = arch ] && [ "$WFS_REMOTE" != novnc ]; then
     die "Arch xrdp requires AUR; choose Debian/Ubuntu/Fedora/Alpine for native RDP or novnc for Arch."
   fi
-  case "$WFS_REMOTE" in rdp|novnc|both) ;; *) die "Invalid remote choice";; esac
-  if [ "$WFS_DISTRO" = arch ] && [ "$WFS_REMOTE" != novnc ]; then
-    die "Native xrdp for Arch is not packaged upstream; choose Debian/Ubuntu/Fedora/Alpine for RDP or use novnc."
+  if [ "$WFS_DISTRO" = igos-nusantara ] && [ "$WFS_REMOTE" != rdp ]; then
+    die "IGN 26 ISO VM currently supports RDP only; select remote_access=rdp."
   fi
 }
 prepare() {
@@ -83,6 +82,11 @@ start() {
   validate
   [ -s "$password_file" ] || die "Password file missing."
   local image="lscr.io/linuxserver/webtop:$WFS_DISTRO-$WFS_DESKTOP"
+  if [ "$WFS_DISTRO" = igos-nusantara ]; then
+    # QEMU boots the real IGOS ISO; Ubuntu Webtop only hosts the secure XRDP shell.
+    image="lscr.io/linuxserver/webtop:ubuntu-xfce"
+    notice "🇮🇩 IGOS ISO VM selected; Ubuntu Xfce is only the outer RDP host."
+  fi
   notice "🐧 [2/5] Downloading selected desktop image: $image"
   # Registry throttling is intermittent on GitHub-hosted runners.
   # Retry a small bounded number of times, without changing the selected tag.
@@ -286,7 +290,7 @@ EOF
 | **Username** | \`$WFS_RDP_USERNAME\` |
 | **Password** | GitHub Secret \`RDP_PASSWORD\` — \`$WFS_RDP_PASSWORD_MODE\` |
 | **Service health** | $rdp_state |
-| **Session** | Independent Xorg/Xfce session, separate from web |
+| **Session** | Xorg/Xfce RDP; in IGOS mode a viewer opens the actual ISO guest |
 
 **How to connect:** Open Windows \`mstsc\` → enter \`$rdp_url\` → login as \`$WFS_RDP_USERNAME\`.
 
@@ -315,6 +319,13 @@ EOF
     fi
   fi
 
+  if [ "$WFS_DISTRO" = igos-nusantara ]; then
+    cat >> "$GITHUB_STEP_SUMMARY" <<'IGOS'
+> ⚠️ **IGOS 26 Ciremai — experimental native ISO VM:** The guest boots from the official ISO in QEMU. XRDP authenticates into an outer Ubuntu Xfce shell and autostarts a fullscreen VNC viewer to IGOS. Chrome/extensions and optional apps run in the OUTER shell, not the guest. VNC is loopback-only; RDP uses your Tailscale tailnet. The VM VNC endpoint check does NOT prove BAYU successfully booted. QEMU software CPU emulation may be slow or unsupported. Close the viewer to use host Chrome.
+
+IGOS
+  fi
+
   cat >> "$GITHUB_STEP_SUMMARY" <<EOF
 ## 🔗 Connection & Runner Details
 
@@ -323,6 +334,8 @@ EOF
 | GitHub Actions run | [Open this run]($run_url) |
 | Distro / desktop | **$WFS_DISTRO / $WFS_DESKTOP** |
 | Host runner | Ubuntu 24.04 (ephemeral) |
+| IGOS 26 guest | ${WFS_IGOS_VM_STATUS:-not selected} |
+| IGOS image source | ${WFS_IGOS_ISO:-not selected} |
 | Container image | \`${WFS_IMAGE:-unknown}\` |
 | Container image digest | \`$image_digest\` |
 | **Tailscale hostname** | \`${WFS_HOSTNAME:-unknown}\` |
@@ -459,6 +472,10 @@ EOF
   while [ "$SECONDS" -lt "$deadline" ]; do
     if [ "$(docker inspect -f '{{.State.Running}}' "$name" 2>/dev/null || true)" != true ]; then
       die "Desktop container stopped while session was active. See Docker logs."
+    fi
+    if [ "$WFS_DISTRO" = igos-nusantara ]; then
+      docker exec -u 0 "$name" /bin/bash -c 'test -s /config/wfs-igos-qemu.pid && kill -0 "$(cat /config/wfs-igos-qemu.pid)"' ||
+        die "IGN 26 QEMU VM stopped; inspect /config/wfs-igos-qemu.log."
     fi
     if ! tailscale status --json >/dev/null; then
       die "Tailscale disconnected during remote session."
