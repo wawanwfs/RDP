@@ -24,6 +24,9 @@ validate() {
   if [ "$WFS_DISTRO" = arch ] && [ "$WFS_REMOTE" != novnc ]; then
     die "Arch xrdp requires AUR; choose Debian/Ubuntu/Fedora/Alpine for native RDP or novnc for Arch."
   fi
+  if [ "$WFS_DISTRO" = igos-nusantara ] && [ "$WFS_DESKTOP" != xfce ]; then
+    die "IGN 26 VM uses its own BAYU desktop; select desktop=xfce for the outer RDP host."
+  fi
   if [ "$WFS_DISTRO" = igos-nusantara ] && [ "$WFS_REMOTE" != rdp ]; then
     die "IGN 26 ISO VM currently supports RDP only; select remote_access=rdp."
   fi
