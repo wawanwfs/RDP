@@ -18,6 +18,18 @@
 
 ---
 
+## 🇮🇩 IGOS Nusantara 26 Ciremai — original ISO in QEMU (experimental)
+
+Pilihan baru **`distro = igos-nusantara`** pada [Linux Remote Workspace](https://github.com/wawanwfs/RDP/actions/workflows/linux-remote-workspace.yml) menjalankan **ISO resmi IGN 26 Beta 6** di VM QEMU. Ini bukan image Fedora/Ubuntu yang diberi nama IGOS. Sistem host tetap Ubuntu 24.04 + Webtop Xfce untuk autentikasi **XRDP/RDP**, Google Chrome dan ekstensi wajib, sedangkan jendela fullscreen RDP menampilkan desktop IGOS asli melalui viewer VNC lokal. Tekan **F8** (menu viewer) atau keluar dari fullscreen untuk mengakses desktop host/Chrome bila perlu.
+
+- **Default remote Linux sekarang `rdp`**, alamat `100.x.x.x:3389` via Tailscale, user default `RDP` (huruf kapital), hostname `rdp-runner`.
+- **Khusus pilihan IGOS** gunakan `remote_access=rdp` (opsi `novnc`/`both` tetap tersedia untuk distro Webtop lain). Desktop dan aplikasi pilihan di workflow dipasang pada **host XRDP**, bukan di dalam guest ISO IGOS.
+- ISO `https://r2.igos-nusantara.or.id/iso/beta/ign26-bayu-beta6.iso` (~1,2 GB) diunduh dari situs resmi. SHA256 hasil unduhan dicatat, tetapi **belum dipin terhadap checksum penerbit**; jangan gunakan ISO ini untuk data sensitif sebelum digest tepercaya tersedia.
+- IGN 26 membutuhkan AVX2 dan UEFI. GitHub-hosted runner biasanya tidak menyediakan KVM; QEMU memakai emulasi CPU sehingga boot BAYU bisa lambat/tidak berhasil. **Tes yang sekarang tersedia hanya validasi statis dan kesiapan proses QEMU/VNC, bukan bukti boot desktop IGOS**. Gunakan Debian/Xfce jika memerlukan workspace RDP yang lebih teruji.
+- Guest QEMU tidak mengekspos VNC ke internet/Tailscale; hanya viewer lokal di container yang terhubung. Sesi berakhir bersama runner; tidak persisten.
+
+Baca [panduan Linux dan batasan IGOS](linux/README.md) serta [dokumentasi IGN 26 resmi](https://igos-nusantara.or.id/docs/id/).
+
 ## 🐧 Linux Remote Workspace — RDP / noVNC / Both
 
 Workflow Linux berjalan **terpisah** dari Windows, tetap memakai Tailscale, GitHub Actions Keep Alive, dan aplikasi pilihan. Distro adalah container pada host Ubuntu 24.04. Pilihan **Debian, Ubuntu, Fedora, Arch, Alpine** dikombinasikan dengan desktop **Xfce, MATE, KDE, i3** (20 kombinasi GUI browser).
@@ -42,7 +54,7 @@ Workflow Linux berjalan **terpisah** dari Windows, tetap memakai Tailscale, GitH
 
 **Perbaikan xrdp + ekstensi Chrome (10 November 2026):** akun RDP Linux sekarang menggunakan **`RDP` kapital**, sama dengan Windows, tanpa normalisasi ke huruf kecil. Installer memasang komponen desktop Xfce lengkap (`xfwm4`, `xfdesktop`, panel, DBus) dan launcher sesi khusus untuk mengatasi layar hitam setelah login; CI juga menguji login grafis dengan FreeRDP. **Google Chrome wajib** dipasang beserta kebijakan pemasangan otomatis **Cookie-Editor** dan **GoFullPage**, sama dengan workflow Windows (Chromium dipakai pada distro tanpa Chrome resmi). Unduhan ekstensi berjalan ketika Chrome pertama kali dibuka; periksa `chrome://policy` dan `chrome://extensions`. [Panduan dan status tes Linux](linux/README.md).
 
-**Output Linux kini setara dengan Windows:** Actions **Summary** menampilkan dashboard lengkap untuk **RDP/browser URL, username, password mode (tanpa membocorkan isi secret), hostname/IP Tailscale, health checks, distro/desktop, status setiap aplikasi, durasi, dan troubleshooting**. Langkah **Remote READY** juga menampilkan banner koneksi dan heartbeat kesehatan setiap menit. **Hostname** dapat diketik pada `tailscale_hostname` dengan default **`rdp-runner`** (mode default `same_each_run` mempertahankan nama yang sama pada setiap run). **Username RDP** default adalah **`rdp`**, sementara username browser tetap **`wfs`** dan dapat diubah.
+**Output Linux kini setara dengan Windows:** Actions **Summary** menampilkan dashboard lengkap untuk **RDP/browser URL, username, password mode (tanpa membocorkan isi secret), hostname/IP Tailscale, health checks, distro/desktop, status setiap aplikasi, durasi, dan troubleshooting**. Langkah **Remote READY** juga menampilkan banner koneksi dan heartbeat kesehatan setiap menit. **Hostname** dapat diketik pada `tailscale_hostname` dengan default **`rdp-runner`** (mode default `same_each_run` mempertahankan nama yang sama pada setiap run). **Username RDP** default adalah **`RDP`**, sementara username browser tetap **`wfs`** dan dapat diubah.
 
 [**▶ Jalankan Linux Remote Workspace**](https://github.com/wawanwfs/RDP/actions/workflows/linux-remote-workspace.yml) · [**Panduan lengkap Linux, password per run, dan daftar app**](linux/README.md)
 
@@ -73,7 +85,7 @@ Workflow Linux berjalan **terpisah** dari Windows, tetap memakai Tailscale, GitH
 **Troubleshooting:** gunakan IP/URL dari run aktif; cek Tailscale ACL/grants, opsi remote dan port 3389/6082; gunakan F11 untuk fullscreen; hindari menutup proses runner; dan backup data karena job dibatasi total 360 menit termasuk instalasi. Untuk detail setiap input distro, desktop, username, hostname, dan password, baca [Linux README](linux/README.md) atau langsung [YAML Linux](.github/workflows/linux-remote-workspace.yml) dan [YAML Windows](.github/workflows/windows-remote-workspace-with-apps.yml).
 
 ---
-**Perbaikan xrdp Linux:** jika username diketik kapital seperti `RDP`, workflow akan menormalkannya menjadi `rdp`. Setup kemudian menguji akun Unix melalui `id/getent passwd` dan memverifikasi login **PAM xrdp-sesman** menggunakan secret `RDP_PASSWORD` sebelum endpoint dinyatakan siap. Untuk aplikasi Ubuntu, instalasi `npm` distro yang bentrok dengan NodeSource Node.js 22 sudah dihindari. Cache root di volume container dibersihkan dengan aman saat cleanup. [Detail audit dan kompatibilitas](linux/README.md).
+**Perbaikan xrdp Linux:** username `RDP` kapital dipertahankan apa adanya; akun Linux case-sensitive dan diverifikasi sebelum endpoint siap. Setup kemudian menguji akun Unix melalui `id/getent passwd` dan memverifikasi login **PAM xrdp-sesman** menggunakan secret `RDP_PASSWORD` sebelum endpoint dinyatakan siap. Untuk aplikasi Ubuntu, instalasi `npm` distro yang bentrok dengan NodeSource Node.js 22 sudah dihindari. Cache root di volume container dibersihkan dengan aman saat cleanup. [Detail audit dan kompatibilitas](linux/README.md).
 
 ## 🪟 Windows Remote Workspace
 
