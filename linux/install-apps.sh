@@ -109,12 +109,8 @@ case "$WFS_EDITOR" in shotcut|both) install_pkg "Shotcut" "shotcut" "shotcut" ;;
 case "$WFS_EDITOR" in capcut|both)
   record "CapCut" "UNSUPPORTED as native Linux executable (Windows installer)" ;;
 esac
-case "$WFS_METATRADER" in mt4|both)
-  record "MetaTrader 4" "MANUAL (Wine/Windows terminal; no native Linux package)" ;;
-esac
-case "$WFS_METATRADER" in mt5|both)
-  record "MetaTrader 5" "MANUAL (Wine/broker configuration required)" ;;
-esac
+# MetaTrader is installed by linux/install-metatrader.sh, a separate
+# verified Wine stage. Never report selected terminals as MANUAL here.
 case "$WFS_ROUTER" in 9router|both) install_npm "9Router" "9router" "9router" ;; esac
 case "$WFS_ROUTER" in omniroute|both) install_npm "OmniRoute" "omniroute" "omniroute" ;; esac
 case "$WFS_CODING_AGENT" in codex|both) install_npm "Codex CLI" "@openai/codex" "codex" ;; esac
