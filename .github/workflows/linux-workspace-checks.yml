@@ -100,6 +100,8 @@ jobs:
           assert "terminal.exe" in trading and "wfs-$app.desktop" in trading
           assert "download.terminal.free/cdn/web/exness.technologies.ltd/mt5/exness5setup.exe" in trading
           assert "bash linux/install-metatrader.sh" in text
+          assert pathlib.Path("linux/test-metatrader-gui.sh").is_file()
+          assert "xwininfo -root -tree" in pathlib.Path("linux/test-metatrader-gui.sh").read_text(encoding="utf-8")
           assert "WFS_METATRADER_STEP_OUTCOME" in text
           assert "Wine/Windows terminal; no native Linux package" not in pathlib.Path("linux/install-apps.sh").read_text(encoding="utf-8")
           xrdp_setup = pathlib.Path("linux/setup-rdp.sh").read_text(encoding="utf-8")
@@ -167,6 +169,29 @@ jobs:
           test "$(docker inspect -f '{{.State.Running}}' wfs-linux-webtop)" = true
           docker exec -u 0 wfs-linux-webtop test "$(docker exec -u 0 wfs-linux-webtop cat /etc/wfs-rdp-desktop)" = kde
           docker exec -u 0 wfs-linux-webtop /bin/sh -c 'command -v startplasma-x11'
+      - name: "🌐 Reuse native KDE Chromium and apply mandatory extensions"
+        timeout-minutes: 4
+        run: |
+          set -euo pipefail
+          existing=$(docker exec -u 0 wfs-linux-webtop /bin/sh -c 'command -v chromium || command -v chromium-browser || true')
+          bash linux/install-chrome.sh
+          family=$(docker exec -u 0 wfs-linux-webtop cat /etc/wfs-browser-family)
+          action=$(docker exec -u 0 wfs-linux-webtop cat /etc/wfs-browser-install-action)
+          if [ -n "$existing" ]; then
+            test "$family" = chromium
+            test "$action" = reused
+            echo 'PASS: existing Chromium reused, no Chrome installation requested.'
+          fi
+          docker exec -u 0 wfs-linux-webtop /bin/sh -c '
+            set -eu
+            browser=$(cat /etc/wfs-browser-executable)
+            test -x "$browser"
+            if [ "$(cat /etc/wfs-browser-family)" = chromium ]; then
+              policy=/etc/chromium/policies/managed/wfs-required-extensions.json
+            else policy=/etc/opt/chrome/policies/managed/wfs-required-extensions.json; fi
+            grep -Fq "hlkenndednhfkekhgcdicdfddnkalmdm" "$policy"
+            grep -Fq "fdpohaocaechififmbbbbbknoalclacl" "$policy"
+          '
       - name: "🧪 Real RDP login must start KDE session (not silent Xfce fallback)"
         timeout-minutes: 7
         run: bash linux/test-rdp-gui.sh
@@ -208,6 +233,19 @@ jobs:
           bash linux/install-metatrader.sh
           grep -F "MetaTrader 5" "$RUNNER_TEMP/wfs-linux/trading-status.tsv" | grep -F "INSTALLED"
           docker exec -u 0 wfs-linux-webtop /bin/sh -c 'test -x /usr/local/bin/wfs-mt5 && test -f /usr/share/applications/wfs-mt5.desktop'
+      - name: "🖥️ Probe actual MT5 X11 window (detect false debugger alert)"
+        id: mt5_gui
+        timeout-minutes: 4
+        continue-on-error: true
+        run: bash linux/test-metatrader-gui.sh
+      - name: "📊 Report MT5 graphical acceptance separately"
+        if: always()
+        env:
+          WFS_MT5_GUI_OUTCOME: ${{ steps.mt5_gui.outcome }}
+        run: |
+          echo "MT5 GUI smoke result: $WFS_MT5_GUI_OUTCOME"
+          echo "### MetaTrader 5 graphical runtime acceptance" >> "$GITHUB_STEP_SUMMARY"
+          echo "GUI X11 smoke: **$WFS_MT5_GUI_OUTCOME**. This is separate from binary INSTALL success. A debugger popup is not accepted as a working terminal." >> "$GITHUB_STEP_SUMMARY"
       - name: "🧹 Always cleanup CI workspace"
         if: always()
         run: bash linux/workspace.sh cleanup
