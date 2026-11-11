@@ -116,6 +116,8 @@ Native Linux Webtop images do not require QEMU; Windows runs natively on its hos
 
 **Hasil CI macOS:** [3/3 berhasil pada Apple Silicon dan Intel](https://github.com/wawanwfs/RDP/actions/runs/42965871428): workflow, akun remote sementara, dan autentikasi SSH password melalui loopback. Koneksi dari PC Windows tetap perlu diuji di tailnet.
 
+**Perbaikan izin perekaman macOS 15/26:** WFS browser preview kini **paused secara default**, menggunakan tombol **Capture one frame** dan batas **satu panggilan screencapture baru tiap 60 detik**. Ini menggantikan polling otomatis yang sebelumnya menumpuk dialog izin “sudo ... screen and audio”. [Panduan pemulihan macOS](macos/README.md). Komponen ScreenCaptureKit native juga sedang diuji tetapi tetap memerlukan persetujuan Apple dan belum otomatis aktif.
+
 **Perkembangan terbaru:** [CI macOS native](https://github.com/wawanwfs/RDP/actions/runs/43074456846) sudah membuktikan stream PNG asli dari macOS 1024×768 melalui HTTP privat dengan autentikasi serta penolakan mutasi. Preview ini membantu melihat isi layar meski VNC menampilkan hitam, tetapi **belum memberikan kontrol mouse/keyboard**. Selanjutnya perlu menguji screenshot wfsremote pada sesi VNC yang benar-benar sedang berjalan.
 
 **Batasan penting:** Apple mengendalikan izin Screen Sharing pada macOS modern. GitHub-hosted runner dapat menjalankan proses WindowServer tetapi belum tentu menerima koneksi desktop yang bisa dikendalikan dari VNC viewer. Workflow mencatat **status VNC berdasarkan header RFB**, menghentikan mode VNC-only jika layanan tidak ada, dan tidak menonaktifkan SIP, mengubah TCC, atau memaksa autentikasi VNC legacy yang lebih lemah.
