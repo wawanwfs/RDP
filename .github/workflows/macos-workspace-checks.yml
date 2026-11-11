@@ -50,6 +50,18 @@ jobs:
           assert "secrets.RDP_PASSWORD" in workflow
           assert "secrets.TAILSCALE_AUTH_KEY" in workflow
           assert "tailscale/github-action@v4" in workflow
+          assert "bash macos/tailscale-dns-guard.sh backup" in workflow
+          assert "bash macos/tailscale-dns-guard.sh restore" in workflow
+          assert "timeout: 90s" in workflow
+          assert 'retry: "1"' in workflow
+          assert "args: --accept-dns=false" in workflow
+          assert "version: 1.104.5" in workflow
+          assert "timeout-minutes: 7" in workflow
+          dns_guard = pathlib.Path("macos/tailscale-dns-guard.sh").read_text(encoding="utf-8")
+          assert "networksetup -getdnsservers" in dns_guard
+          assert 'networksetup -setdnsservers "$service"' in dns_guard
+          assert "RUNNER_ENVIRONMENT" in dns_guard
+          assert "GITHUB_ACTIONS" in dns_guard
           assert "bash macos/workspace.sh" in workflow
           assert "bash macos/install-apps.sh" in workflow
           for forbidden in ("TCC.db","sqlite3","DisableRealtimeMonitoring","vnc password printed","0.0.0.0:5900"):
@@ -62,6 +74,7 @@ jobs:
           PY
           bash -n macos/workspace.sh
           bash -n macos/install-apps.sh
+          bash -n macos/tailscale-dns-guard.sh
           echo "PASS: Bash syntax validated."
 
 
@@ -118,6 +131,12 @@ jobs:
             echo "| SSH | Requires Tailscale secret; not started by safety-only smoke |"
           } >> "$GITHUB_STEP_SUMMARY"
           echo "PASS: genuine macOS runner; GUI feasibility is recorded without false success."
+      - name: "🛡️ Test native DNS backup without modifying system networking"
+        run: |
+          set -euo pipefail
+          bash macos/tailscale-dns-guard.sh backup
+          test -s "$RUNNER_TEMP/wfs-macos/dns-ethernet.before"
+          echo "PASS: captured original macOS DNS config without changing system DNS."
       - name: "🧪 Regression: SSH/VNC status must update current process and GITHUB_ENV"
         env:
           WFS_MAC_USER: wfsremote
