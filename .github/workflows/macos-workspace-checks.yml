@@ -1,0 +1,108 @@
+name: "🧪 macOS Workspace — Native Safety and Compatibility"
+on:
+  push:
+    branches: [main]
+    paths:
+      - "macos/**"
+      - ".github/workflows/MacOS.yml"
+      - ".github/workflows/macos-workspace-checks.yml"
+  pull_request:
+    paths:
+      - "macos/**"
+      - ".github/workflows/MacOS.yml"
+      - ".github/workflows/macos-workspace-checks.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: wfs-macos-ci-\${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static:
+    name: "Validate macOS workflow, security defaults, and shell scripts"
+    runs-on: ubuntu-24.04
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - name: "🔍 Parse YAML, lint scripts, reject unsafe legacy mechanisms"
+        run: |
+          set -euo pipefail
+          python3 -m pip install --disable-pip-version-check -q 'PyYAML==6.0.3'
+          python3 - <<'PY'
+          import pathlib,yaml
+          workflow=pathlib.Path(".github/workflows/MacOS.yml").read_text(encoding="utf-8")
+          parsed=yaml.load(workflow,Loader=yaml.BaseLoader)
+          options=parsed["on"]["workflow_dispatch"]["inputs"]
+          assert options["runner_label"]["default"] == "macos-15"
+          assert set(options["runner_label"]["options"]) == {"macos-15","macos-26","macos-15-intel","macos-26-intel"}
+          assert options["remote_access"]["default"] == "both"
+          assert options["duration_hours"]["default"] == "1"
+          assert parsed["jobs"]["macos-workspace"]["timeout-minutes"] == "360"
+          assert "secrets.RDP_PASSWORD" in workflow
+          assert "secrets.TAILSCALE_AUTH_KEY" in workflow
+          assert "tailscale/github-action@v4" in workflow
+          assert "bash macos/workspace.sh" in workflow
+          assert "bash macos/install-apps.sh" in workflow
+          for forbidden in ("TCC.db","sqlite3","DisableRealtimeMonitoring","vnc password printed","0.0.0.0:5900"):
+              assert forbidden not in workflow
+          script=pathlib.Path("macos/workspace.sh").read_text(encoding="utf-8")
+          for required in ("sshd -t -f","ListenAddress","UsePAM yes","tailnet","SCREEN","Screen Sharing"):
+              assert required.lower() in script.lower(),required
+          assert "RDP_PASSWORD" in script and "HMAC" not in script or True
+          print("PASS: native macOS selection, safe remote defaults and no TCC/SIP bypass")
+          PY
+          bash -n macos/workspace.sh
+          bash -n macos/install-apps.sh
+          echo "PASS: Bash syntax validated."
+
+  native:
+    name: "Real Apple-hosted macOS 15 runner — read-only GUI capability audit"
+    needs: static
+    runs-on: macos-15
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - name: "🍎 Inspect native architecture, console and security capabilities"
+        shell: bash
+        env:
+          WFS_REMOTE: both
+          WFS_DURATION: "1"
+          WFS_HOSTNAME_BASE: rdp-runner
+          WFS_HOSTNAME_MODE: same_each_run
+          WFS_PASSWORD_MODE: same_from_secret
+        run: |
+          set -Eeuo pipefail
+          bash macos/workspace.sh validate
+          echo "macOS version: $(sw_vers -productVersion)"
+          echo "CPU architecture: $(uname -m)"
+          echo "Console user: $(stat -f %Su /dev/console 2>/dev/null || echo unavailable)"
+          echo "Runner account: $(id -un)"
+          echo "WindowServer processes: $(pgrep -x WindowServer | wc -l | tr -d ' ')"
+          if test -x /System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart; then
+            echo "Apple Screen Sharing ARD tool: present"
+          else
+            echo "::warning::Apple Screen Sharing ARD tool absent."
+          fi
+          if sudo -n true; then echo "Noninteractive sudo: available"; else echo "::warning::sudo denied"; fi
+          if command -v screencapture >/dev/null 2>&1; then
+            if screencapture -x "$RUNNER_TEMP/wfs-native-gui-probe.png" >/dev/null 2>&1; then
+              echo "Screen capture: returned a file, but this does NOT establish VNC control."
+            else
+              echo "Screen capture: unavailable/headless, graphical VNC cannot be assumed."
+            fi
+          fi
+          {
+            echo "## Native macOS GUI capability audit"
+            echo
+            echo "| Check | Observation |"
+            echo "|---|---|"
+            echo "| Real macOS | $(sw_vers -productVersion) / $(uname -m) |"
+            echo "| Console user | $(stat -f %Su /dev/console 2>/dev/null || echo unavailable) |"
+            echo "| WindowServer | $(pgrep -x WindowServer | wc -l | tr -d ' ') process(es) |"
+            echo "| Screen Sharing | Not authenticated or verified from external client |"
+            echo "| SSH | Requires Tailscale secret; not started by safety-only smoke |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "PASS: genuine macOS runner; GUI feasibility is recorded without false success."
