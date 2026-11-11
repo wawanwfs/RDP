@@ -412,7 +412,7 @@ IGOS
 |:--|:--|
 | Optional apps | $apps_state |
 | MetaTrader Wine installation | $trading_state |
-| MetaTrader GUI compatibility | **Not verified by binary install**. A recent MT5 build under Wine may show a false debugger alert. Check actual chart/terminal before trading. |
+| MT5 Wine GUI acceptance | **${WFS_MT5_GUI_STATUS:-NOT_CHECKED}** — this probes a real X11 window, separate from executable installation and broker authentication. |
 | MT4 GUI fallback | If `PENDING_INTERACTIVE`, open the saved official installer from the KDE desktop; this is not installed status. |
 | ArtCraft Launcher | $artcraft_state |
 
