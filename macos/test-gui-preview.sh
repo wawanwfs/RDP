@@ -34,6 +34,13 @@ unauth="$(curl -s --noproxy '*' -o /dev/null -w '%{http_code}' "$url/health")"
 test "$unauth" = 401
 echo "PASS: unauthenticated HTTP denied (401)."
 # Password is never printed in Actions logs, only stored inside 0700 test dir.
+curl -fsS --noproxy '*' -u "wfsremote:$password" "$url/" -o "$temp/index.html"
+grep -Fq "Capture one frame" "$temp/index.html"
+if grep -Fq 'setInterval' "$temp/index.html"; then
+  echo "FAIL: automatic periodic captures would trigger recurring macOS TCC prompts." >&2
+  exit 41
+fi
+echo "PASS: preview opens paused and requests no automatic screenshots."
 status="$(curl -s --noproxy '*' -u "wfsremote:$password" -o /dev/null -w '%{http_code}' "$url/")"
 test "$status" = 200
 status="$(curl -s --noproxy '*' -u "wfsremote:$password" -o /dev/null -w '%{http_code}' -X POST "$url/")"
@@ -48,6 +55,12 @@ w,h=struct.unpack(">II",data[16:24])
 assert 64 <= w <= 10000 and 64 <= h <= 10000
 print(f"PASS: macOS native screencapture frame delivered over authenticated HTTP: {w}x{h}, {len(data)} bytes")
 PY
+# Repeated HTTP calls within 60 seconds MUST return the cached image without
+# launching another screencapture process (TCC alert regression).
+curl -fsS --noproxy '*' -u "wfsremote:$password" "$url/frame.png" -o "$temp/frame-2.png"
+cmp "$temp/frame.png" "$temp/frame-2.png"
+curl -fsS --noproxy '*' -u "wfsremote:$password" "$url/health" |
+  python3 -c 'import json,sys; j=json.load(sys.stdin); assert j["frames"]==1; print("PASS: second HTTP frame reused first capture (one OS capture only).")'
 curl -fsS --noproxy '*' -u "wfsremote:$password" "$url/health" |
   python3 -c 'import json,sys; j=json.load(sys.stdin); assert j["mode"]=="read_only" and j["frames"]>=1 and j["screenshot_ok"]; print("PASS: preview health reports real successful capture")'
 echo "NOTE: screenshot bytes verified and removed during cleanup; mouse/keyboard control NOT tested or supported."
