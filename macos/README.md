@@ -249,6 +249,30 @@ New [macOS workflow](../.github/workflows/macos-remote-workspace.yml) input: `gu
 
 **Security:** The listener binds *only* to an address inside Tailscale's IPv4 `100.64.0.0/10` network; never to `0.0.0.0` or the public NIC. HTTP Basic authentication uses the existing 12+-character remote password, protected in transit by **Tailscale's encrypted peer-to-peer transport**. Credentials are not placed in URLs or logs. PNG frames are created in a private temporary file, read, then removed; the server does not archive or upload them. Don't expose port 6081 with Funnel, public port forwarding, or an unencrypted Internet proxy.
 
+**Test on an ALREADY RUNNING macOS workspace (no workflow rerun):** The native CI can prove PNG streaming from the `runner` Aqua context, but your VNC session uses `wfsremote`. To capture from **exactly your current SSH identity**, download the self-contained [`macos/launch-preview-ssh.sh`](launch-preview-ssh.sh) and inspect it first:
+
+```bash
+curl -fsSLo /tmp/wfs-launch-preview-ssh.sh https://raw.githubusercontent.com/wawanwfs/RDP/main/macos/launch-preview-ssh.sh
+bash -n /tmp/wfs-launch-preview-ssh.sh
+bash /tmp/wfs-launch-preview-ssh.sh
+```
+
+The launcher detects the current Tailscale IP, asks for a **new browser-only password of at least 12 characters**, starts the screenshot mirror in the **same `wfsremote` SSH account**, and tests an authenticated PNG frame before returning its URL. **Do not reuse or paste a GitHub token.** If the Tailscale CLI isn't visible in your SSH shell, supply the real IP from the workflow Summary, for example:
+
+```bash
+WFS_PREVIEW_IP=100.x.x.x bash /tmp/wfs-launch-preview-ssh.sh
+```
+
+Then from Windows, join the same tailnet and open `http://100.x.x.x:6081/`, login as `wfsremote` with **the new browser password you entered**, not necessarily `RDP_PASSWORD` (the auto-workflow mode uses `RDP_PASSWORD`, whereas this manual SSH launcher lets you choose a separate password). The service is screenshot-only; clicking its image does not remotely click macOS.
+
+Stop only the manually started viewer without disconnecting SSH:
+
+```bash
+bash "$HOME/.wfs-preview/launch-preview-ssh.sh" --stop
+```
+
+**Acceptance required:** Browser frame contains genuine desktop content and changes when you interact with the Mac, not just a login rectangle. Even success here counts as **viewing**, not full interactive remote desktop. Don't mark the VNC task done until mouse/keyboard and visible Finder/Dock are also demonstrated.
+
 **Critical acceptance distinction:**
 
 - `LISTENER_READY_FRAME_UNVERIFIED` means only TCP listener creation has been observed, **not** a working display.
