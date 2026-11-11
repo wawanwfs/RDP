@@ -1,5 +1,5 @@
 name: "🍎 WFS macOS Remote Workspace"
-run-name: "🍎 WFS macOS • \${{ inputs.runner_label }} • \${{ inputs.remote_access }} • \${{ inputs.duration_hours }}h"
+run-name: "🍎 WFS macOS • ${{ inputs.runner_label }} • ${{ inputs.remote_access }} • ${{ inputs.duration_hours }}h"
 
 on:
   workflow_dispatch:
@@ -73,7 +73,7 @@ on:
 
 # Do not start two macOS sessions with the same default tailnet hostname.
 concurrency:
-  group: wfs-macos-\${{ github.ref }}
+  group: wfs-macos-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
@@ -82,22 +82,22 @@ permissions:
 jobs:
   macos-workspace:
     name: "Genuine macOS runner via private Tailscale SSH / experimental Screen Sharing"
-    runs-on: \${{ inputs.runner_label }}
+    runs-on: ${{ inputs.runner_label }}
     timeout-minutes: 360
     defaults:
       run:
         shell: bash
     env:
-      WFS_REMOTE: \${{ inputs.remote_access }}
-      WFS_DURATION: \${{ inputs.duration_hours }}
-      WFS_HOSTNAME_BASE: \${{ inputs.tailscale_hostname }}
-      WFS_HOSTNAME_MODE: \${{ inputs.hostname_mode }}
-      WFS_PASSWORD_MODE: \${{ inputs.password_mode }}
-      WFS_IDE: \${{ inputs.ide_choice }}
-      WFS_AGENT: \${{ inputs.coding_agent_choice }}
-      WFS_APPS: \${{ inputs.apps_bundle }}
-      WFS_TRADING: \${{ inputs.trading_choice }}
-      WFS_REMOTE_SECRET: \${{ secrets.RDP_PASSWORD }}
+      WFS_REMOTE: ${{ inputs.remote_access }}
+      WFS_DURATION: ${{ inputs.duration_hours }}
+      WFS_HOSTNAME_BASE: ${{ inputs.tailscale_hostname }}
+      WFS_HOSTNAME_MODE: ${{ inputs.hostname_mode }}
+      WFS_PASSWORD_MODE: ${{ inputs.password_mode }}
+      WFS_IDE: ${{ inputs.ide_choice }}
+      WFS_AGENT: ${{ inputs.coding_agent_choice }}
+      WFS_APPS: ${{ inputs.apps_bundle }}
+      WFS_TRADING: ${{ inputs.trading_choice }}
+      WFS_REMOTE_SECRET: ${{ secrets.RDP_PASSWORD }}
       WFS_MAC_SSH_STATUS: SKIPPED
       WFS_MAC_VNC_STATUS: SKIPPED
     steps:
@@ -113,8 +113,8 @@ jobs:
       - name: "🐾 Connect macOS runner to private Tailscale"
         uses: tailscale/github-action@v4
         with:
-          authkey: \${{ secrets.TAILSCALE_AUTH_KEY }}
-          hostname: \${{ env.WFS_MAC_HOSTNAME }}
+          authkey: ${{ secrets.TAILSCALE_AUTH_KEY }}
+          hostname: ${{ env.WFS_MAC_HOSTNAME }}
           version: latest
       - name: "🔐 Setup isolated tailnet SSH and/or best-effort Screen Sharing"
         timeout-minutes: 8
