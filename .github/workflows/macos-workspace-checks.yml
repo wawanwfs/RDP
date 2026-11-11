@@ -59,7 +59,7 @@ jobs:
           echo "PASS: Bash syntax validated."
 
   native:
-    name: "Real Apple-hosted macOS 15 runner — read-only GUI capability audit"
+    name: "Apple-hosted macOS 15 — native GUI audit and private-loopback SSH login"
     needs: static
     runs-on: macos-15
     timeout-minutes: 9
@@ -106,3 +106,20 @@ jobs:
             echo "| SSH | Requires Tailscale secret; not started by safety-only smoke |"
           } >> "$GITHUB_STEP_SUMMARY"
           echo "PASS: genuine macOS runner; GUI feasibility is recorded without false success."
+      - name: "🔐 Exercise production SSH config with real macOS password authentication on localhost"
+        env:
+          WFS_REMOTE: ssh
+          WFS_DURATION: "1"
+          WFS_HOSTNAME_BASE: rdp-runner
+          WFS_HOSTNAME_MODE: same_each_run
+          WFS_PASSWORD_MODE: same_from_secret
+          WFS_REMOTE_SECRET: "CI-EphemeralOnly-StrongPassword-2026"
+        run: |
+          set -euo pipefail
+          bash macos/workspace.sh prepare
+          bash macos/workspace.sh local-smoke
+          echo "PASS: SSH daemon bound only to 127.0.0.1 and accepted the ephemeral runner account password." >> "$GITHUB_STEP_SUMMARY"
+      - name: "🧹 Always clean up localhost SSH smoke"
+        if: always()
+        run: bash macos/workspace.sh cleanup
+
