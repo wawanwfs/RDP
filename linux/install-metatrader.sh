@@ -230,5 +230,31 @@ INSTALL
     fi
   fi
 done
+# Keep a legal, account-free browser alternative when a Windows terminal fails
+# to render under Wine. WebTerminal does NOT support desktop EAs/scripts.
+docker exec -i -u 0 "$container" /bin/sh -s <<'WEB'
+set -eu
+browser="$(cat /etc/wfs-browser-executable 2>/dev/null || true)"
+if [ -n "$browser" ] && [ -x "$browser" ]; then
+  cat > /usr/local/bin/wfs-metatrader-web <<'SCRIPT'
+#!/bin/sh
+browser="$(cat /etc/wfs-browser-executable)"
+test -x "$browser" || { echo "Selected browser missing"; exit 1; }
+exec "$browser" https://web.metatrader.app/
+SCRIPT
+  chmod 755 /usr/local/bin/wfs-metatrader-web
+  mkdir -p /usr/share/applications
+  cat > /usr/share/applications/wfs-metatrader-web.desktop <<'DESKTOP'
+[Desktop Entry]
+Type=Application
+Name=MetaTrader WebTerminal (WFS fallback)
+Comment=Browser-based trading; does not support desktop Expert Advisors
+Exec=/usr/local/bin/wfs-metatrader-web
+Terminal=false
+Categories=Network;Finance;
+DESKTOP
+  echo "[WFS Trading] Optional browser-only WebTerminal menu shortcut ready (not a desktop EA replacement)."
+fi
+WEB
 say "Wine selected app installation finished; failed=$failed. Per-app results are in Actions Summary."
 [ "$failed" -eq 0 ]
