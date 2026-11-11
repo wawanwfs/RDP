@@ -8,7 +8,7 @@
 |:--|:--|:--|:--|
 | Windows | [Windows Remote Workspace](../.github/workflows/windows-remote-workspace-with-apps.yml) | `windows-2025` | Native `rdp`, user `RDP` |
 | Linux | [Linux Remote Workspace](../.github/workflows/linux-remote-workspace.yml) | `ubuntu` + `kde` | Native `xrdp`, user `RDP` |
-| macOS | [macOS Remote Workspace](../.github/workflows/MacOS.yml) | `macos-15` Apple Silicon | Tailscale SSH `:2222`, Apple VNC `:5900` experimental, user `wfsremote` (verify Summary) |
+| macOS | [macOS Remote Workspace](../.github/workflows/macos-remote-workspace.yml) | `macos-15` Apple Silicon | Tailscale SSH `:2222`, Apple VNC `:5900` experimental, user `wfsremote` (verify Summary) |
 
 All three use Tailscale (private tailnet only), `rdp-runner` as default hostname, 1/3/6-hour selected sessions, and GitHub's **360-minute total job cap**. A selected six-hour session can have less than six hours remaining after setup.
 
@@ -38,7 +38,7 @@ All three use Tailscale (private tailnet only), `rdp-runner` as default hostname
 |:--|:--|:--|
 | Native macOS runner | [macOS CI run](https://github.com/wawanwfs/RDP/actions/runs/42964659962) | Real macOS 15.8.2 ARM64, user `runner`, WindowServer present, sudo/ARD utility and screenshot capability observed |
 | Workflow safety | [macOS native CI](../.github/workflows/macos-workspace-checks.yml) | YAML/Bash parse and security controls; no TCC/SIP manipulation or publicly bound SSH |
-| Tailnet SSH listener | Must be checked after [macOS workflow run](../.github/workflows/MacOS.yml) | `ListenAddress` private 100.x.x.x, TCP :2222 responds, restricted user |
+| Tailnet SSH listener | Must be checked after [macOS workflow run](../.github/workflows/macos-remote-workspace.yml) | `ListenAddress` private 100.x.x.x, TCP :2222 responds, restricted user |
 | Local SSH authentication | [macOS ARM64+Intel CI](https://github.com/wawanwfs/RDP/actions/runs/42965871428) | Dedicated user `wfsremote` created, macOS Directory Services password verified, real OpenSSH login accepted via loopback on both CPU architectures |
 | External SSH authentication | Client-side acceptance **not yet performed** | Authorized Windows device on Tailscale logs in to 100.x.x.x:2222 as `wfsremote` |
 | Screen Sharing listener | Best-effort GitHub-hosted macOS | TCP :5900 may open and reply with an RFB banner; `RFB_READY_GUI_CONTROL_UNVERIFIED` is **not** acceptance |
