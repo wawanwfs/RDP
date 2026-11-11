@@ -141,6 +141,14 @@ Istilah *Hackintosh* biasanya berarti macOS berjalan pada PC non-Apple. **Workfl
 
 Sumber: [Apple Software License Agreement for macOS Tahoe](https://www.apple.com/legal/sla/docs/macOSTahoe.pdf).
 
+### Fixed: SSH ready but workflow falsely reports unavailable
+
+[Manual macOS 15 Intel run #43028097147](https://github.com/wawanwfs/RDP/actions/runs/43028097147) revealed a separate **status propagation bug**: Tailscale, temporary user authentication, SSH listener `100.x.x.x:2222`, and a VNC RFB banner all succeeded, yet the workflow ended with `Private SSH unavailable; VNC alone is not a verified login path.` The problem was not the SSH server; the Bash function wrote `WFS_MAC_SSH_STATUS=TCP_READY_LOGIN_NOT_TESTED` to GitHub's `GITHUB_ENV`, which only updates **subsequent steps**, while its `both` availability check still read the old `SKIPPED` value **in the same process**.
+
+**Fix:** `macos/workspace.sh` now updates and exports status variables immediately **and** writes `GITHUB_ENV`. The exact failure mode has a dedicated `status-smoke` test, and [regression CI #43028698293](https://github.com/wawanwfs/RDP/actions/runs/43028698293) passed **3/3 jobs**, including both Apple Silicon and Intel. Full external client SSH and interactive VNC login still require a new manual workflow run.
+
+**After fixing:** start a **new** [macOS workflow](https://github.com/wawanwfs/RDP/actions/workflows/MacOS.yml) from the current `main` branch, choose `macos-15-intel`, remote `both`, username `wfsremote`, duration `1`. Do **not** use *Re-run jobs* on the old failure because GitHub reruns the original commit.
+
 ## 8. Troubleshooting and acceptance gates
 
 | Symptom | Diagnose |
