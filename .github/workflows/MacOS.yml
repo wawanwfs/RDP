@@ -14,6 +14,11 @@ on:
           - macos-26
           - macos-15-intel
           - macos-26-intel
+      remote_username:
+        description: "Isolated temporary macOS user (never modifies system runner)"
+        type: string
+        required: true
+        default: wfsremote
       remote_access:
         description: "SSH is testable; Apple VNC is experimental on hosted runners"
         required: true
@@ -88,6 +93,7 @@ jobs:
       run:
         shell: bash
     env:
+      WFS_MAC_USER: ${{ inputs.remote_username }}
       WFS_REMOTE: ${{ inputs.remote_access }}
       WFS_DURATION: ${{ inputs.duration_hours }}
       WFS_HOSTNAME_BASE: ${{ inputs.tailscale_hostname }}
