@@ -227,13 +227,11 @@ bash -n /tmp/wfs-session.sh
 bash /tmp/wfs-session.sh wfsremote
 ```
 
-If the output confirms **`launchctl gui/UID: EXISTS`**, the **console belongs to `wfsremote`**, and **`Finder: NOT RUNNING`**, optionally try to start **only Finder** in the existing user session:
+**Update from a real macOS 15.8.2 Apple Silicon session:** `wfsremote` was the console owner, `gui/502` was present, Finder/Dock/SystemUIServer were absent, and the local screenshot had only **4/144 near-black samples (2%)**. However, trying `launchctl asuser 502 open -a Finder` from the SSH shell repeatedly failed with `Could not switch to audit session ... Operation not permitted`.
 
-```bash
-bash /tmp/wfs-session.sh wfsremote --open-finder
-```
+**Do not retry the old `--open-finder` suggestion from SSH.** A valid `gui/502` namespace does not place an SSH process inside an authorized graphical (*Aqua*) audit session. The updated diagnostic reports `launchctl managername` and refuses a Finder launch outside the Aqua context. A truly interactive macOS session (or approved MDM/GUI setup) is required to initialize/repair the user's desktop; `sudo`, ad-hoc audit-session switching, or TCC database edits are not supported workarounds. See [macOS GUI versus SSH session explanation](https://www.creativeworksofknowledge.com/en/cwk-quests/swift-quest/macos-citizen/gui-session-vs-ssh/) and [Apple Remote Management](https://support.apple.com/en-bw/guide/remote-desktop/apd8b1c65bd/mac).
 
-Disconnect and reconnect TigerVNC. This command does **not** log the user in, create a GUI bootstrap, reset permissions, restart WindowServer, or alter `runner`'s session; macOS may reject it if the GUI context is incomplete. It is a **diagnostic/remediation experiment, not a guaranteed GUI fix**.
+A non-black screenshot **does not guarantee Finder or Dock is present**; it might represent a login UI, blank wallpaper, or a different screen surface. Compare the VNC view to the client display only after an approved graphical session is available.
 
 If the screenshot samples are nearly 100% black despite a live GUI session, or Finder exists but VNC remains black, the likely obstacle is an unavailable screen surface or **macOS Remote Management screen-capture permission**. On macOS 12.1+, `kickstart` alone does not guarantee interactive Screen Sharing. Using `launchctl` to start the service does not grant TCC capture permissions. For approved access, configure Screen Sharing via System Settings or device MDM on a genuine Apple host rather than hacking TCC databases. See [Screens black-display troubleshooting](https://help.edovia.com/en-GB/screens-5/troubleshooting/blank-screen) and [Apple Remote Management](https://support.apple.com/guide/remote-desktop/enable-remote-management-apd8b1c65bd/mac).
 
