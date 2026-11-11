@@ -41,7 +41,7 @@ WFS Remote Workspaces mempunyai **tiga** workflow utama: [Windows RDP](../.githu
 
 Pengujian [macOS 15 ARM64 + Intel](https://github.com/wawanwfs/RDP/actions/runs/42965871428) sekarang **3/3 job lulus** (validasi workflow, akun terisolasi, dan login SSH dengan password sebenarnya pada alamat loopback untuk kedua arsitektur). Pembuktian ini belum mencakup koneksi ke Tailscale IP dari perangkat Windows ataupun interaksi grafis VNC. Run [Intel VNC lebih lama](https://github.com/wawanwfs/RDP/actions/runs/42965256465) sempat gagal saat mencoba mereset password akun sistem `runner`; mekanisme itu telah diganti dengan akun baru `wfsremote` dan login lokalnya berhasil diuji.
 
-Pada macOS 12.1 dan lebih baru, Apple membatasi pengaktifan Screen Sharing lewat alat command-line. **Remote Management yang diaktifkan via kickstart dapat hanya view-only**, dan runner GitHub-hosted dapat beroperasi tanpa desktop login grafis yang dapat dikendalikan. Membuka port **5900** atau mengaktifkan service **bukan bukti** layar interaktif. WFS menampilkan status aktual di Actions Summary: `PORT_OPEN_GUI_CONTROL_UNVERIFIED` atau `UNAVAILABLE`, tidak pernah menjanjikan “VNC READY & fully controllable” berdasarkan TCP saja.
+Pada macOS 12.1 dan lebih baru, Apple membatasi pengaktifan Screen Sharing lewat alat command-line. **Remote Management yang diaktifkan via kickstart dapat hanya view-only**, dan runner GitHub-hosted dapat beroperasi tanpa desktop login grafis yang dapat dikendalikan. Membuka port **5900** atau mengaktifkan service **bukan bukti** layar interaktif. Workflow sekarang memeriksa **header protokol RFB** dari port tersebut, tetapi itu pun bukan bukti login atau kendali grafis. WFS menampilkan status aktual di Actions Summary: `RFB_READY_GUI_CONTROL_UNVERIFIED` atau `UNAVAILABLE`, tidak pernah menjanjikan “VNC READY & fully controllable” berdasarkan TCP saja. **Mode `vnc` akan dihentikan lebih awal** jika layanan tidak menyediakan header RFB, agar waktu runner tidak terbuang. Mode `both` tetap dapat dipakai lewat SSH ketika VNC gagal.
 
 Sumber: [Apple — Remote Management](https://support.apple.com/guide/remote-desktop/enable-remote-management-apd8b1c65bd/mac) · [GitHub macOS runner images](https://github.com/actions/runner-images) · [GitHub macOS runner limits](https://docs.github.com/en/actions/reference/runners/larger-runners).
 
@@ -93,7 +93,7 @@ Untuk mode `same_from_secret`, gunakan nilai `RDP_PASSWORD` seperti biasa. Ini l
 ## 4. Launch workflow
 
 1. Buka [**WFS macOS Workspace → Run workflow**](https://github.com/wawanwfs/RDP/actions/workflows/MacOS.yml) dan pilih branch `main`.
-2. Untuk uji awal pilih **macos-15**, **both**, **1 hour**, hostname **rdp-runner**, `same_from_secret`, aplikasi `none`.
+2. Untuk uji awal pilih **macos-15**, **both**, **1 hour**, username **`wfsremote`**, hostname **rdp-runner**, `same_from_secret`, aplikasi `none`. **Jalankan workflow baru dari `main`**, jangan gunakan *Re-run jobs* pada run lama: GitHub memakai SHA lama ketika mengulang run.
 3. Baca langkah **Connect macOS runner to private Tailscale** dan **Setup isolated tailnet SSH and/or best-effort Screen Sharing**. Jangan menyimpulkan GUI berhasil hanya karena workflow masuk Keep Alive.
 4. Lihat **Actions Summary**: IP Tailscale, username macOS sebenarnya, status SSH, status VNC, dan petunjuk koneksi.
 5. Hubungkan perangkat klien ke Tailscale yang sama, lalu uji SSH terlebih dahulu. Jika status VNC menunjukkan port terbuka, uji dengan aplikasi VNC viewer.
@@ -155,7 +155,7 @@ Sumber: [Apple Software License Agreement for macOS Tahoe](https://www.apple.com
 | Tailscale connection fails | Key, tags, tailnet ACL, device approval and outbound connectivity |
 | Session ended early | GitHub job 360-minute cap includes setup, runner preemption, manual cancel, or billing/runner quota |
 
-**Acceptance levels:** `SSH TCP_READY_AUTH_UNTESTED` confirms a private socket, **not client authentication**. `VNC PORT_OPEN_GUI_CONTROL_UNVERIFIED` confirms only a listening port, **not a usable interactive macOS desktop**. Full acceptance requires the authorized user to connect from a second tailnet device, log in, open Finder and verify interaction. Avoid entering personal credentials until you trust the session.
+**Acceptance levels:** `SSH TCP_READY_AUTH_UNTESTED` confirms a private socket, **not client authentication**. `VNC RFB_READY_GUI_CONTROL_UNVERIFIED` confirms only a listening port, **not a usable interactive macOS desktop**. Full acceptance requires the authorized user to connect from a second tailnet device, log in, open Finder and verify interaction. Avoid entering personal credentials until you trust the session.
 
 ## 9. Verification and changes
 
