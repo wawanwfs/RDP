@@ -255,6 +255,18 @@ jobs:
         continue-on-error: true
         run: bash linux/install-metatrader.sh
 
+      - name: "🖥️ Verify MT5 Wine GUI launch (distinct from install status)"
+        if: inputs.metatrader_choice == 'mt5' || inputs.metatrader_choice == 'both'
+        timeout-minutes: 4
+        run: |
+          if bash linux/test-metatrader-gui.sh; then
+            echo "WFS_MT5_GUI_STATUS=PASS_MAIN_WINDOW_X11" >> "$GITHUB_ENV"
+            echo "::notice title=MetaTrader 5 GUI::Wine main window observed under Xvfb (real XRDP login still needs user check)."
+          else
+            echo "WFS_MT5_GUI_STATUS=BLOCKED_OR_UNVERIFIED" >> "$GITHUB_ENV"
+            echo "::warning title=MetaTrader 5 GUI::MT5 executable may be installed, but the X11 runtime did not open its main window. A Wine debugger false-positive may appear. Use Chromium WebTerminal for browser trading (no EA) or Windows native RDP."
+          fi
+
       - name: "🎨 Install latest verified Linux ArtCraft Launcher"
         id: artcraft
         if: inputs.install_artcraft
