@@ -138,11 +138,29 @@ screen_sharing() {
     sleep 3
   done
   if test "$ready" = yes; then
-    save WFS_MAC_VNC_STATUS PORT_OPEN_GUI_CONTROL_UNVERIFIED
-    say "Apple Screen Sharing 5900 listening. Control permissions/headless screen NOT validated."
+    # A TCP listener is not necessarily an RFB server, and even a valid RFB
+    # banner says nothing about an accessible or controllable GUI.
+    if python3 - <<'PY'
+import socket,sys
+try:
+    with socket.create_connection(("127.0.0.1",5900),timeout=3) as conn:
+        conn.settimeout(3)
+        greeting=conn.recv(12)
+    if not greeting.startswith(b"RFB "):
+        raise ValueError("Not an RFB endpoint")
+except (OSError,ValueError):
+    sys.exit(1)
+PY
+    then
+      save WFS_MAC_VNC_STATUS RFB_READY_GUI_CONTROL_UNVERIFIED
+      say "Apple Screen Sharing returned an RFB protocol banner; graphical control still unverified."
+    else
+      save WFS_MAC_VNC_STATUS PORT_OPEN_NO_RFB
+      warn "TCP 5900 responds but no VNC/RFB header was received."
+    fi
   else
     save WFS_MAC_VNC_STATUS UNAVAILABLE
-    warn "Screen Sharing did not open port 5900 on hosted runner."
+    warn "Screen Sharing did not open port 5900. Apple may block scripted activation on recent macOS."
   fi
   if test "$console" != "$user"; then
     warn "Console belongs to $console, not isolated remote user $user; Screen Sharing may require login or be unavailable."
@@ -156,6 +174,25 @@ setup() {
   local ip; ip="$(cat "$state/ip")"
   if test "$WFS_REMOTE" = ssh || test "$WFS_REMOTE" = both; then ssh_server "$ip"; fi
   if test "$WFS_REMOTE" = vnc || test "$WFS_REMOTE" = both; then screen_sharing; fi
+  # Stop immediately instead of charging hours for an unavailable endpoint.
+  # In 'both' mode, SSH remains usable even when Apple Screen Sharing fails.
+  case "$WFS_REMOTE" in
+    ssh)
+      test "$WFS_MAC_SSH_STATUS" = TCP_READY_LOGIN_NOT_TESTED ||
+        die "SSH unavailable on private Tailnet; ending without Keep Alive."
+      ;;
+    vnc)
+      test "$WFS_MAC_VNC_STATUS" = RFB_READY_GUI_CONTROL_UNVERIFIED ||
+        die "VNC-only mode unavailable; Apple Screen Sharing did not return RFB. Try both/ssh instead of wasting runner hours."
+      ;;
+    both)
+      test "$WFS_MAC_SSH_STATUS" = TCP_READY_LOGIN_NOT_TESTED ||
+        die "Private SSH unavailable; VNC alone is not a verified login path."
+      if test "$WFS_MAC_VNC_STATUS" != RFB_READY_GUI_CONTROL_UNVERIFIED; then
+        warn "VNC is not available; SSH is usable via private Tailscale IP."
+      fi
+      ;;
+  esac
 }
 local_smoke() {
   validate
@@ -202,7 +239,7 @@ summary() {
     echo "| macOS login username | $user |"
     echo "| Login password | Existing GitHub secret RDP_PASSWORD; mode $WFS_PASSWORD_MODE (never printed) |"
     echo "| SSH :2222 | $WFS_MAC_SSH_STATUS |"
-    echo "| Apple Screen Sharing :5900 | $WFS_MAC_VNC_STATUS |"
+    echo "| Apple Screen Sharing :5900 | $WFS_MAC_VNC_STATUS (RFB listener only; GUI not confirmed) |"
     echo "| Session duration | Selected $WFS_DURATION hour(s), total GitHub job cap 360 min including setup |"
     echo
     echo "**Windows PowerShell (SSH):** \`ssh -p 2222 $user@$ip\` (if SSH is listening)."
