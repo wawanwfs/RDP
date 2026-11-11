@@ -56,11 +56,12 @@ button.addEventListener('click',captureOne);
 
 class Mirror(http.server.ThreadingHTTPServer):
     daemon_threads = True
-    def __init__(self, address, handler, username, password, min_interval):
+    def __init__(self, address, handler, username, password, min_interval, frame_file=None):
         super().__init__(address, handler)
         self.username = username
         self.password = password
         self.min_interval = min_interval
+        self.frame_file = frame_file
         self.image = None
         self.last_time = 0
         self.lock = threading.Lock()
@@ -69,6 +70,19 @@ class Mirror(http.server.ThreadingHTTPServer):
 
     def capture(self):
         with self.lock:
+            if self.frame_file is not None:
+                try:
+                    data = self.frame_file.read_bytes()
+                    if not (data.startswith(b"\x89PNG\r\n\x1a\n") and 100 <= len(data) <= 16*1024*1024):
+                        raise RuntimeError("Native ScreenCaptureKit frame is not a valid PNG")
+                    if self.image != data:
+                        self.image = data
+                        self.frame_count += 1
+                    self.last_error = ""
+                    return data
+                except (OSError, RuntimeError) as exc:
+                    self.last_error = str(exc)
+                    raise RuntimeError("Waiting for native ScreenCaptureKit frame and user Screen Recording approval")
             now = time.monotonic()
             if self.image is not None and now - self.last_time < self.min_interval:
                 return self.image
@@ -163,6 +177,7 @@ def main():
     parser.add_argument("--username",default="wfsremote")
     parser.add_argument("--password-file",required=True,help="0600 file; never expose password in arguments or logs")
     parser.add_argument("--min-interval",type=float,default=60.0)
+    parser.add_argument("--frame-file",default=None,help="Private PNG written by persistent ScreenCaptureKit helper; never invokes screencapture")
     args=parser.parse_args()
     host=ipaddress.ip_address(args.host)
     if host.version != 4 or not (host in ipaddress.ip_network("100.64.0.0/10") or host == ipaddress.ip_address("127.0.0.1")):
@@ -175,8 +190,14 @@ def main():
     password=file.read_text(encoding="utf-8").strip()
     if len(password)<12 or ":" in args.username or not args.username:
         parser.error("Password must be 12+ characters; valid username required")
-    server=Mirror((str(host),args.port),Handler,args.username,password,args.min_interval)
-    print(f"[WFS macOS Preview] Bound {host}:{args.port} as {args.username}; screenshot-only, read-only",flush=True)
+    frame_file = None
+    if args.frame_file:
+        frame_file = Path(args.frame_file).expanduser().resolve()
+        # Private snapshot path is not served as a static directory.
+        if (frame_file.parent.stat().st_mode & 0o077) != 0:
+            parser.error("Native frame directory must be private (0700)")
+    server=Mirror((str(host),args.port),Handler,args.username,password,args.min_interval,frame_file=frame_file)
+    print(f"[WFS macOS Preview] Bound {host}:{args.port} as {args.username}; source={'persistent ScreenCaptureKit' if frame_file else 'manual screenshot'}; read-only",flush=True)
     try: server.serve_forever(poll_interval=.4)
     except KeyboardInterrupt: pass
     finally: server.server_close()
