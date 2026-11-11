@@ -133,11 +133,47 @@ screen_sharing() {
   local user="$WFS_MAC_USER"
   local console="$(stat -f %Su /dev/console 2>/dev/null || true)"
   say "Console user=$console. Attempting supported Screen Sharing services."
+  # Configure ARD in discrete, documented commands. A single invocation
+  # containing multiple -configure blocks can silently skip per-user rights.
+  # Only our disposable, non-admin account is eligible; never allow all users.
+  local ardstatus="NOT_CONFIGURED" attr
   if test -x "$kick"; then
-    sudo "$kick" -activate -configure -access -on \
-      -configure -allowAccessFor -specifiedUsers -configure -users "$user" -access -on -privs -all \
-      -restart -agent > "$state/ard.log" 2>&1 || warn "ARD configuration was refused."
+    : > "$state/ard.log"
+    if ! sudo "$kick" -activate -configure -access -on >> "$state/ard.log" 2>&1; then
+      warn "Remote Management activation returned an error (see Actions diagnostics)."
+    fi
+    if ! sudo "$kick" -configure -allowAccessFor -specifiedUsers >> "$state/ard.log" 2>&1; then
+      warn "Failed to restrict Remote Management to explicitly specified users."
+      ardstatus="ACCESS_LIST_FAILED"
+    elif ! sudo "$kick" -configure -users "$user" -access -on -privs -all >> "$state/ard.log" 2>&1; then
+      warn "Could not grant Remote Management Observe/Control rights to $user."
+      ardstatus="USER_GRANT_FAILED"
+    else
+      ardstatus="USER_GRANT_COMMAND_SUCCEEDED"
+    fi
+    # This access group alone is not sufficient but can be required depending
+    # on the Mac's Screen Sharing configuration. Never add the admin group.
+    if dscl . -read /Groups/com.apple.access_screensharing >/dev/null 2>&1; then
+      sudo dseditgroup -o edit -a "$user" -t user com.apple.access_screensharing >> "$state/ard.log" 2>&1 ||
+        warn "Screen Sharing access group could not be updated."
+    fi
+    sudo "$kick" -restart -agent >> "$state/ard.log" 2>&1 ||
+      warn "ARD agent restart did not finish cleanly."
+    if attr="$(dscl . -read "/Users/$user" dsAttrTypeNative:naprivs 2>/dev/null)"; then
+      say "ARD per-user privileges attribute exists for $user (not proof of authenticated VNC control)."
+      if test "$ardstatus" = USER_GRANT_COMMAND_SUCCEEDED; then
+        ardstatus="USER_GRANT_ATTRIBUTE_PRESENT_GUI_UNVERIFIED"
+      fi
+    else
+      warn "No ARD per-user privilege attribute found for $user. SSH rights do not grant VNC rights."
+      if test "$ardstatus" = USER_GRANT_COMMAND_SUCCEEDED; then
+        ardstatus="USER_PRIVILEGES_UNVERIFIED"
+      fi
+    fi
+  else
+    warn "Apple ARD kickstart is not available."
   fi
+  save WFS_MAC_ARD_STATUS "$ardstatus"
   sudo launchctl enable system/com.apple.screensharing >/dev/null 2>&1 || true
   sudo launchctl bootstrap system /System/Library/LaunchDaemons/com.apple.screensharing.plist >/dev/null 2>&1 || true
   sudo launchctl kickstart -k system/com.apple.screensharing >/dev/null 2>&1 || true
@@ -172,8 +208,9 @@ PY
     warn "Screen Sharing did not open port 5900. Apple may block scripted activation on recent macOS."
   fi
   if test "$console" != "$user"; then
-    warn "Console belongs to $console, not isolated remote user $user; Screen Sharing may require login or be unavailable."
+    warn "Console belongs to $console, not isolated remote user $user; ARD may reject this account or display a different session."
   fi
+  say "VNC RFB listener does not establish authentication; macOS 12.1+ may require GUI/MDM approval for full control."
 }
 check_remote_ready() {
   # Stop immediately instead of charging hours for an unavailable endpoint.
@@ -277,6 +314,8 @@ summary() {
     echo "| Login password | Existing GitHub secret RDP_PASSWORD; mode $WFS_PASSWORD_MODE (never printed) |"
     echo "| SSH :2222 | $WFS_MAC_SSH_STATUS |"
     echo "| Apple Screen Sharing :5900 | $WFS_MAC_VNC_STATUS (RFB listener only; GUI not confirmed) |"
+    echo "| Remote Management user grant | ${WFS_MAC_ARD_STATUS:-NOT_CHECKED} (permission ≠ successful VNC login) |"
+    echo "| Console session user | $(stat -f %Su /dev/console 2>/dev/null || echo unavailable) (may differ from VNC login user) |"
     echo "| Session duration | Selected $WFS_DURATION hour(s), total GitHub job cap 360 min including setup |"
     echo
     echo "**Windows PowerShell (SSH):** \`ssh -p 2222 $user@$ip\` (if SSH is listening)."
