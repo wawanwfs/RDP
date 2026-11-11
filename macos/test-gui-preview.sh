@@ -5,7 +5,15 @@ set -Eeuo pipefail
 test "$(uname -s)" = Darwin
 temp="$(mktemp -d)"
 chmod 700 "$temp"
-trap 'kill "$pid" >/dev/null 2>&1 || true; rm -rf "$temp"' EXIT
+pid=""
+cleanup() {
+  local result="$?"
+  trap - EXIT
+  if test -n "$pid"; then kill "$pid" >/dev/null 2>&1 || true; wait "$pid" 2>/dev/null || true; fi
+  rm -rf "$temp"
+  exit "$result"
+}
+trap cleanup EXIT
 password="ci-testing-strong-password-2026"
 printf '%s' "$password" > "$temp/secret"
 chmod 600 "$temp/secret"
@@ -25,7 +33,6 @@ url="http://127.0.0.1:6089"
 unauth="$(curl -s --noproxy '*' -o /dev/null -w '%{http_code}' "$url/health")"
 test "$unauth" = 401
 echo "PASS: unauthenticated HTTP denied (401)."
-auth="$username"
 # Password is never printed in Actions logs, only stored inside 0700 test dir.
 status="$(curl -s --noproxy '*' -u "wfsremote:$password" -o /dev/null -w '%{http_code}' "$url/")"
 test "$status" = 200
