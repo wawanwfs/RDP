@@ -17,7 +17,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: wfs-macos-ci-\${{ github.ref }}
+  group: wfs-macos-ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
