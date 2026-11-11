@@ -209,6 +209,34 @@ It reports the active console user, WindowServer/Finder/loginwindow process pres
 
 If no usable console desktop exists on the GitHub-hosted runner, **a listener on port 5900 and correct ARD group grants cannot create one**. For repeatable controllable GUI access use a genuine Apple-hosted Mac with a logged-in graphical session and System Settings/MDM-approved Screen Sharing. For terminal and development work, keep using SSH or VS Code Remote SSH.
 
+### Console owner is wfsremote but TigerVNC stays black
+
+A live macOS 15.8.2 ARM64 session reported:
+- `/dev/console` owner **`wfsremote`** after VNC login
+- 1 active CoreGraphics display at **1024×768**; SSH `screencapture` returned PNG bytes
+- `WindowServer` and `loginwindow` processes present; **Finder was only running as `runner`, not as `wfsremote`**
+- TigerVNC showed only a black screen and pointer
+
+**Therefore the display is not missing**, but its contents and the remote user's GUI bootstrap are not yet verified. VNC can create/show a second virtual session for the authenticated account; this can differ from the original `runner` Finder session. Apple lets Remote Desktop users select whether they see the logged-in user's physical display or their own virtual desktop. [Apple's session-selection explanation](https://support.apple.com/guide/remote-desktop/choose-how-to-control-and-observe-apd4f46319e/mac).
+
+Run the safe [desktop session diagnostic](diagnose-desktop-session.sh) **through the current working SSH**. It checks the GUI bootstrap for `wfsremote`, checks Finder/Dock/SystemUIServer ownership, takes a private temporary screenshot and reports whether sampled pixels are nearly all black, then deletes the screenshot automatically:
+
+```bash
+curl -fsSLo /tmp/wfs-session.sh https://raw.githubusercontent.com/wawanwfs/RDP/main/macos/diagnose-desktop-session.sh
+bash -n /tmp/wfs-session.sh
+bash /tmp/wfs-session.sh wfsremote
+```
+
+If the output confirms **`launchctl gui/UID: EXISTS`**, the **console belongs to `wfsremote`**, and **`Finder: NOT RUNNING`**, optionally try to start **only Finder** in the existing user session:
+
+```bash
+bash /tmp/wfs-session.sh wfsremote --open-finder
+```
+
+Disconnect and reconnect TigerVNC. This command does **not** log the user in, create a GUI bootstrap, reset permissions, restart WindowServer, or alter `runner`'s session; macOS may reject it if the GUI context is incomplete. It is a **diagnostic/remediation experiment, not a guaranteed GUI fix**.
+
+If the screenshot samples are nearly 100% black despite a live GUI session, or Finder exists but VNC remains black, the likely obstacle is an unavailable screen surface or **macOS Remote Management screen-capture permission**. On macOS 12.1+, `kickstart` alone does not guarantee interactive Screen Sharing. Using `launchctl` to start the service does not grant TCC capture permissions. For approved access, configure Screen Sharing via System Settings or device MDM on a genuine Apple host rather than hacking TCC databases. See [Screens black-display troubleshooting](https://help.edovia.com/en-GB/screens-5/troubleshooting/blank-screen) and [Apple Remote Management](https://support.apple.com/guide/remote-desktop/enable-remote-management-apd8b1c65bd/mac).
+
 ## 8. Troubleshooting and acceptance gates
 
 | Symptom | Diagnose |
