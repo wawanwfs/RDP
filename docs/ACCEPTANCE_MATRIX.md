@@ -18,7 +18,7 @@ Both use Tailscale (private tailnet only), `rdp-runner` as default hostname, 1/3
 | Windows MT4 (Exness) | [native Windows install acceptance](https://github.com/wawanwfs/RDP/actions/runs/42924327969) | Official Exness download signed, `MetaTrader 4 EXNESS\terminal.exe` found, hashed | RDP user login, broker login, charts, EA |
 | Windows MT5 | [same native Windows run](https://github.com/wawanwfs/RDP/actions/runs/42924327969) | Official MetaQuotes download signed, `MetaTrader 5\terminal64.exe` found, hashed | RDP user login, broker login, charts, EA |
 | Windows scripted fallback | [Windows acceptance workflow](../.github/workflows/windows-workspace-checks.yml) | Installer staging and Public Desktop shortcut paths are checked when silent installation fails | A user clicked the installer or accepted the license |
-| Linux MT5 Wine | [Linux acceptance run](https://github.com/wawanwfs/RDP/actions/runs/42844537445) | Wine installed, executable and launcher created | Graphics, broker login or live trading |
+| Linux MT5 Wine | [Linux binary acceptance](https://github.com/wawanwfs/RDP/actions/runs/42844537445) | Wine installed, terminal64.exe and launcher created from MetaQuotes installer | GUI may fail with false debugger dialog on current MT5 builds. Separate X11 smoke test available |
 | Linux MT4 Wine | [Linux fallback acceptance](https://github.com/wawanwfs/RDP/actions/runs/42925180890) | Exact state `PENDING_INTERACTIVE`, original setup and desktop shortcut were checked after headless timeout | Does **not** prove MT4 terminal is installed |
 | Linux KDE XRDP | [Linux runtime acceptance](https://github.com/wawanwfs/RDP/actions/runs/42925180890) | FreeRDP GUI login starts KDE Plasma/X11 instead of silently falling back to Xfce | External client connection remains unverified |
 | Linux KDE/Xfce / Tailscale | [Linux CI](../.github/workflows/linux-workspace-checks.yml) | Test-only native GUI session, HTTPS authentication, Tailscale port forwarding, SSH-free RDP handshake | Successful connection from a separate user's device |
@@ -26,6 +26,10 @@ Both use Tailscale (private tailnet only), `rdp-runner` as default hostname, 1/3
 **Linux CI (latest completed integration: 8/8 jobs passed):** [run 42925180890](https://github.com/wawanwfs/RDP/actions/runs/42925180890). Windows native MT4/MT5 tests also passed [run 42924327969](https://github.com/wawanwfs/RDP/actions/runs/42924327969). Both results are installer/runtime evidence, not broker acceptance.
 
 **Linux MT4 status:** the installer offers a **`PENDING_INTERACTIVE`** fallback with a visible `Install MetaTrader 4 (WFS)` desktop icon if Wine's unattended Exness setup does not produce the correct executable. This is **not** equivalent to `INSTALLED`. The isolated GUI installer should be completed only inside the authorized user's remote desktop. A pending result must never be marketed as unattended success.
+
+**Browser precedence:** Linux setup now reuses preinstalled **Chromium** (including KDE Webtop); both extensions are configured under `/etc/chromium/policies/managed/`. Chrome is downloaded only if neither browser exists. [Chromium reuse CI](https://github.com/wawanwfs/RDP/actions/runs/42927094664) shows bundled Chromium selected without Chrome installation. Existing sessions require a new workflow run to pick up the change.
+
+**Current MT5 Linux limitation:** Exness `exness5setup.exe` was tried as unattended alternative but stalled under Wine and did not install. The proven generic MetaQuotes installer remains in place; runtime Wine false debugger alerts cannot be declared fixed by a successful binary check. Open the **MetaTrader WebTerminal (WFS fallback)** menu entry in Chromium for browser-only functionality (no EA/scripts), or choose Windows native RDP for desktop MT5/EA.
 
 ## 3. Windows acceptance checklist
 
