@@ -129,12 +129,12 @@ Distro native memakai tag [LinuxServer Webtop](https://docs.linuxserver.io/image
 
 ### 📈 MetaTrader installation — no fake success status
 
-Saat `metatrader_choice=mt4`, `mt5`, atau `both`, workflow memanggil [`linux/install-metatrader.sh`](linux/install-metatrader.sh) secara otomatis **setelah desktop XRDP disiapkan**. Script memasang Wine/Xvfb dari repositori distro, mengunduh installer resmi MT5 dari MetaQuotes dan paket MT4 resmi dari Exness melalui HTTPS, menyiapkan prefix Wine terpisah, mencoba instalasi tanpa interaksi, mencari **terminal MetaTrader yang benar**, lalu membuat launcher dan shortcut bila executable ditemukan.
+Saat `metatrader_choice=mt4`, `mt5`, atau `both`, workflow memanggil [`linux/install-metatrader.sh`](linux/install-metatrader.sh) secara otomatis **setelah desktop XRDP disiapkan**. Script memasang Wine/Xvfb dari repositori distro dan mencoba **paket resmi Exness MT4/MT5** pada prefix Wine terpisah. **Hanya file executable yang benar** yang dihitung sebagai pemasangan; uji jendela MT5 pada X11 disediakan terpisah karena Wine dapat memunculkan pesan debugger palsu pada build terbaru.
 
 - **MT5:** installer `mt5setup.exe /auto` resmi; hanya dinyatakan `INSTALLED` jika `terminal64.exe` yang benar, launcher, dan shortcut ada.
 - **MT4:** menggunakan **installer Exness dari tautan resmi**. Pada Wine/Ubuntu, bootstrap MT4 dapat memerlukan GUI sehingga `/auto` bisa berhenti tanpa memasang terminal. Jika demikian, workflow menyimpan installer ke direktori pengguna, membuat shortcut **Install MetaTrader 4 (WFS)** di desktop remote, dan mencatat status **`PENDING_INTERACTIVE`**, bukan `INSTALLED`. Klik shortcut tersebut setelah masuk XRDP dan ikuti wizard. MT4 dinyatakan `INSTALLED` hanya jika `terminal.exe` benar-benar terpasang.
 - **Windows:** MT4/MT5 memakai installer Windows native; tidak memerlukan Wine.
-- **Linux:** Chrome dan ekstensi wajib berada di sistem Linux yang dipilih, sedangkan opsi guest ISO eksperimen memasangnya pada host XRDP, **bukan** otomatis di guest.
+- **Linux:** jika Chromium sudah tersedia (termasuk Webtop KDE), workflow **menggunakan Chromium bawaan tanpa mengunduh Chrome**. Cookie-Editor dan GoFullPage dipasang melalui kebijakan Chromium; jika Chrome sudah ada digunakan sebagai alternatif, dan Google Chrome baru diinstal hanya saat tidak ada browser yang didukung. Guest ISO eksperimen tetap menggunakan browser host XRDP, bukan aplikasi di guest.
 - **Tidak ada** broker login, password akun trading, EA, atau aktivasi auto-trade yang dilakukan oleh workflow. Pemasangan file bukan bukti terminal benar-benar dapat dipakai trading; buka shortcut dan cek koneksi secara manual.
 
 Installer bisa berstatus `INSTALLED`, `PENDING_INTERACTIVE`, `FAILED`, atau `UNSUPPORTED` per terminal. Bila app opsional gagal, remote tetap disediakan dan penyebabnya tampil di **Actions Summary**. Wine di Alpine tidak didukung oleh tahap ini. Untuk Linux trading terminal terbaik gunakan **Ubuntu**.
@@ -149,6 +149,17 @@ Jika setup otomatis tidak menghasilkan terminal yang benar, script menyalin inst
 
 **Bukti CI:** [Windows MT4 + MT5 berhasil terpasang dengan file executable terverifikasi](https://github.com/wawanwfs/RDP/actions/runs/42924327969). [Windows verification terbaru](https://github.com/wawanwfs/RDP/actions/workflows/windows-workspace-checks.yml) juga menguji pengamanan fallback. Pengujian ini **tidak** membuktikan keberhasilan logon broker, rendering chart, penggunaan EA, ataupun koneksi dari perangkat eksternal.
 
+### 🧩 MT5 Wine compatibility and reliable browser fallback
+
+Pada pengujian KDE/RDP, **MT5 dapat berhasil terinstal tetapi gagal saat dibuka**, menampilkan `A debugger has been found running in your system`. Laporan MQL5 pada Oktober 2026 menghubungkan gejala ini dengan kompatibilitas **build MT5 terkini dan Wine**, termasuk Wine 9/10. Run pengguna sebelumnya mencatat Wine 10.0. Karena itu penggantian Wine saja **tidak dijadikan klaim perbaikan pasti**.
+
+- MT5 Linux sekarang mencoba **installer Exness resmi** pada prefix Wine terpisah, bukan installer generik sebelumnya.
+- [`test-metatrader-gui.sh`](linux/test-metatrader-gui.sh) menguji **jendela MT5 sungguhan** di Xvfb. Hasil GUI dipisahkan dari pemeriksaan bahwa `terminal64.exe` ada.
+- Jika Wine tidak kompatibel, tersedia menu **MetaTrader WebTerminal (WFS fallback)** yang membuka terminal berbasis browser di Chromium. Ini tidak mendukung EA desktop.
+- Untuk kebutuhan **MetaTrader 5/MetaEditor/EA desktop**, workflow **Windows RDP native** tetap jalur dengan kompatibilitas paling baik dan instalasi MT4/MT5 yang sudah terverifikasi; login dan EA harus diuji sebelum penggunaan sungguhan.
+
+**Browser premium Linux:** Chromium bawaan Webtop KDE diprioritaskan. CI telah membuktikan Chromium `156.0.8078.73` digunakan kembali tanpa memasang Chrome tambahan. Status browser terpilih dan tindakan instalasi dicatat dalam Actions Summary.
+
 ### 📦 Application selection
 
 | Menu | Windows | Linux |
@@ -161,9 +172,9 @@ Jika setup otomatis tidak menghasilkan terminal yang benar, script menyalin inst
 | Agents | Hermes, OpenClaw, OpenCode | Hermes, OpenClaw, OpenCode |
 | Creative | ArtCraft Launcher | ArtCraft Launcher dengan dukungan paket distro |
 | Bundle | Paket aplikasi opsional | Developer / Office / Media / All |
-| Browser wajib | Chrome + extensions | Chrome / Chromium + Cookie-Editor dan GoFullPage |
+| Browser wajib | Chrome + extensions | **Chromium bawaan lebih diutamakan**, Cookie-Editor dan GoFullPage; tanpa Chrome ganda |
 
-**Catatan:** memilih aplikasi berarti **meminta** pemasangan, bukan menjamin aplikasi lolos. Periksa status masing-masing aplikasi di Summary. Ekstensi Chrome diunduh ketika profile browser pertama dibuka dan jaringan ke Chrome Web Store tersedia.
+**Catatan:** memilih aplikasi berarti **meminta** pemasangan, bukan menjamin aplikasi lolos. Periksa status masing-masing aplikasi di Summary. Ekstensi Chromium/Chrome diunduh ketika profil browser pertama dibuka dan jaringan ke Chrome Web Store tersedia; verifikasi di `chrome://extensions`.
 
 ### 🔌 How to connect
 
