@@ -221,7 +221,7 @@ jobs:
         timeout-minutes: 15
         run: bash linux/setup-rdp.sh
 
-      - name: "🌐 Install Google Chrome + mandatory Cookie-Editor and GoFullPage extensions"
+      - name: "🌐 Reuse bundled Chromium + configure Cookie-Editor and GoFullPage"
         timeout-minutes: 10
         run: bash linux/install-chrome.sh
 
