@@ -86,6 +86,12 @@ jobs:
           assert "tccutil reset" not in displaydiag
           assert "pmset -a" not in displaydiag
           assert "tccutil" not in diagnose
+          assert "gui_preview" in workflow
+          assert "bash macos/start-gui-preview.sh" in workflow
+          assert "6081" in pathlib.Path("macos/gui-preview.py").read_text(encoding="utf-8")
+          assert "100.64.0.0/10" in pathlib.Path("macos/gui-preview.py").read_text(encoding="utf-8")
+          assert "WWW-Authenticate" in pathlib.Path("macos/gui-preview.py").read_text(encoding="utf-8")
+          assert 'def do_POST' in pathlib.Path("macos/gui-preview.py").read_text(encoding="utf-8")
           assert "bash macos/workspace.sh" in workflow
           assert "bash macos/install-apps.sh" in workflow
           for forbidden in ("TCC.db","sqlite3","DisableRealtimeMonitoring","vnc password printed","0.0.0.0:5900"):
@@ -101,6 +107,9 @@ jobs:
           bash -n macos/diagnose-display.sh
           bash -n macos/diagnose-desktop-session.sh
           bash -n macos/install-apps.sh
+          bash -n macos/start-gui-preview.sh
+          bash -n macos/test-gui-preview.sh
+          python3 -m py_compile macos/gui-preview.py
           bash -n macos/tailscale-dns-guard.sh
           echo "PASS: Bash syntax validated."
 
@@ -197,6 +206,9 @@ jobs:
         run: |
           bash macos/diagnose-desktop-session.sh wfsremote
           echo 'GUI session diagnostic completed (no screenshot retained or uploaded).' >> "$GITHUB_STEP_SUMMARY"
+      - name: "🖼️ Verify private macOS screenshot viewer on localhost"
+        timeout-minutes: 3
+        run: bash macos/test-gui-preview.sh
       - name: "🧹 Always clean up localhost SSH smoke"
         if: always()
         run: bash macos/workspace.sh cleanup
