@@ -72,6 +72,12 @@ jobs:
           assert 'RFB 003.008' in diagnose
           assert "Classic VNC password type 2:" in diagnose
           assert "kickstart -activate" not in diagnose
+          displaydiag=pathlib.Path("macos/diagnose-display.sh").read_text(encoding="utf-8")
+          assert "CGGetActiveDisplayList" in displaydiag
+          assert "screencapture -x" in displaydiag
+          assert "stat -f %Su /dev/console" in displaydiag
+          assert "tccutil reset" not in displaydiag
+          assert "pmset -a" not in displaydiag
           assert "tccutil" not in diagnose
           assert "bash macos/workspace.sh" in workflow
           assert "bash macos/install-apps.sh" in workflow
@@ -85,6 +91,7 @@ jobs:
           PY
           bash -n macos/workspace.sh
           bash -n macos/diagnose-vnc.sh
+          bash -n macos/diagnose-display.sh
           bash -n macos/install-apps.sh
           bash -n macos/tailscale-dns-guard.sh
           echo "PASS: Bash syntax validated."
