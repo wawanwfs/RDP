@@ -104,7 +104,7 @@ jobs:
           trading = pathlib.Path("linux/install-metatrader.sh").read_text(encoding="utf-8")
           assert "wineboot -u" in trading and "terminal64.exe" in trading
           assert "terminal.exe" in trading and "wfs-$app.desktop" in trading
-          assert "download.terminal.free/cdn/web/exness.technologies.ltd/mt5/exness5setup.exe" in trading
+          assert "download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe" in trading
           assert "bash linux/install-metatrader.sh" in text
           assert pathlib.Path("linux/test-metatrader-gui.sh").is_file()
           assert "xwininfo -root -tree" in pathlib.Path("linux/test-metatrader-gui.sh").read_text(encoding="utf-8")
