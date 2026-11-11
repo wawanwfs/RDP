@@ -97,15 +97,26 @@ start() {
     notice "🇮🇩 IGOS ISO VM selected; Ubuntu Xfce is only the outer RDP host."
   fi
   notice "🐧 [2/5] Downloading selected desktop image: $image"
-  # Registry throttling is intermittent on GitHub-hosted runners.
-  # Retry a small bounded number of times, without changing the selected tag.
-  local pulled=no
-  for attempt in 1 2 3 4; do
-    if docker pull "$image"; then pulled=yes; break; fi
-    notice "⚠️ Webtop registry pull failed attempt $attempt/4; retrying."
-    sleep $((attempt * 5))
+  # LinuxServer publishes the same official Webtop tags via LSCR and Docker Hub.
+  # GitHub-hosted runner IPs may hit LSCR pull throttles during parallel CI.
+  # Use a second *official* registry only if the primary source fails.
+  local tag="${image##*:}"
+  local dockerhub="docker.io/linuxserver/webtop:$tag"
+  local pulled=no registry candidate attempt
+  for candidate in "$image" "$dockerhub"; do
+    for attempt in 1 2 3; do
+      if docker pull "$candidate"; then
+        image="$candidate"
+        pulled=yes
+        break
+      fi
+      notice "⚠️ Official Webtop pull failed from $candidate (attempt $attempt/3)."
+      sleep $((attempt * 8))
+    done
+    [ "$pulled" = yes ] && break
+    notice "⚠️ Switching to alternate official LinuxServer registry for the same tag $tag."
   done
-  [ "$pulled" = yes ] || die "Cannot pull $image after four attempts (check registry rate limits)."
+  [ "$pulled" = yes ] || die "Cannot pull Webtop $tag from LSCR or Docker Hub; check registry availability and rate limits."
   docker rm -f "$name" >/dev/null 2>&1 || true
   local -a rdp_args=() kvm_args=()
   if [ "$WFS_DISTRO" = igos-nusantara ] && [ -c /dev/kvm ]; then
