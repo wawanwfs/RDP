@@ -212,11 +212,27 @@ Exec=$launcher
 Terminal=false
 Categories=Office;Finance;
 DESKTOP
-cp "/usr/share/applications/wfs-$app.desktop" "$home/Desktop/wfs-$app.desktop"
-chmod +x "$home/Desktop/wfs-$app.desktop"
-chown "$account" "$home/Desktop/wfs-$app.desktop"
-test -x "$launcher" && test -s "$terminal" && test -s "$home/Desktop/wfs-$app.desktop"
-echo "PASS: $title terminal executable and desktop shortcut verified."
+# Wine may already have added an official, icon-bearing desktop launcher.
+# Keep the desktop clean instead of adding a generic duplicate "(WFS)" icon.
+native_shortcut=""
+for shortcut in "$home/Desktop/"*.desktop; do
+  [ -f "$shortcut" ] || continue
+  case "$shortcut" in */wfs-*.desktop) continue ;; esac
+  if grep -Fiq "$title" "$shortcut" 2>/dev/null; then
+    native_shortcut="$shortcut"
+    break
+  fi
+done
+if [ -n "$native_shortcut" ]; then
+  echo "[WFS Trading] Existing native $title Desktop icon kept; no duplicate WFS icon."
+else
+  cp "/usr/share/applications/wfs-$app.desktop" "$home/Desktop/wfs-$app.desktop"
+  chmod +x "$home/Desktop/wfs-$app.desktop"
+  chown "$account" "$home/Desktop/wfs-$app.desktop"
+  native_shortcut="$home/Desktop/wfs-$app.desktop"
+fi
+test -x "$launcher" && test -s "$terminal" && test -s "$native_shortcut"
+echo "PASS: $title binary, menu launcher, and one desktop shortcut verified."
 INSTALL
   then
     record "$label" "INSTALLED (Wine executable + Desktop shortcut verified; GUI/account login not yet tested)"
