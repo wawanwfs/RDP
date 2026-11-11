@@ -2,27 +2,28 @@
 
 # 🖥️ WFS Remote Workspaces
 
-**Windows & Linux · Native RDP / XRDP · Browser Remote · Tailscale · GitHub Actions**
+**Windows · Linux · macOS · Private Remote Access · Tailscale · GitHub Actions**
 
 **Deploy a temporary cloud desktop, choose the apps you need, connect privately, and keep the runner alive for the active session.**
 
 [![Windows Workflow](https://img.shields.io/github/actions/workflow/status/wawanwfs/RDP/windows-remote-workspace-with-apps.yml?branch=main&style=for-the-badge&logo=windows&label=Windows)](https://github.com/wawanwfs/RDP/actions/workflows/windows-remote-workspace-with-apps.yml)
 [![Windows CI](https://img.shields.io/github/actions/workflow/status/wawanwfs/RDP/windows-workspace-checks.yml?branch=main&style=for-the-badge&logo=windows&label=Windows%20CI)](https://github.com/wawanwfs/RDP/actions/workflows/windows-workspace-checks.yml)
 [![Linux CI](https://img.shields.io/github/actions/workflow/status/wawanwfs/RDP/linux-workspace-checks.yml?branch=main&style=for-the-badge&logo=linux&label=Linux%20CI)](https://github.com/wawanwfs/RDP/actions/workflows/linux-workspace-checks.yml)
-[![Remote](https://img.shields.io/badge/Remote-RDP%20%7C%20Web-735DE2?style=for-the-badge)](https://github.com/wawanwfs/RDP/actions)
+[![macOS CI](https://img.shields.io/github/actions/workflow/status/wawanwfs/RDP/macos-workspace-checks.yml?branch=main&style=for-the-badge&logo=apple&label=macOS%20CI)](https://github.com/wawanwfs/RDP/actions/workflows/macos-workspace-checks.yml)
+[![Remote](https://img.shields.io/badge/Remote-RDP%20%7C%20XRDP%20%7C%20SSH%20%7C%20VNC-735DE2?style=for-the-badge)](https://github.com/wawanwfs/RDP/actions)
 [![Tailscale](https://img.shields.io/badge/Network-Tailscale%20Private-242424?style=for-the-badge)](https://tailscale.com/)
 
 ### ▶️ Choose your remote environment
 
-| 🪟 Windows Workspace | 🐧 Linux Workspace |
-|:---:|:---:|
-| [**▶ Launch Windows**](https://github.com/wawanwfs/RDP/actions/workflows/windows-remote-workspace-with-apps.yml) | [**▶ Launch Linux**](https://github.com/wawanwfs/RDP/actions/workflows/linux-remote-workspace.yml) |
-| Default: Windows 2025 + RDP | **Default: Ubuntu + KDE Plasma + XRDP** |
-| RDP / noVNC / Both | XRDP / Webtop Selkies / Both |
-| Native Windows applications | Native Linux apps; Linux MT4/MT5 via Wine |
-| [Windows guide ↓](#-windows-remote-workspace) | [**Complete Linux guide**](linux/README.md) |
+| 🪟 Windows | 🐧 Linux | 🍎 macOS |
+|:---:|:---:|:---:|
+| [**▶ Launch Windows**](https://github.com/wawanwfs/RDP/actions/workflows/windows-remote-workspace-with-apps.yml) | [**▶ Launch Linux**](https://github.com/wawanwfs/RDP/actions/workflows/linux-remote-workspace.yml) | [**▶ Launch macOS**](https://github.com/wawanwfs/RDP/actions/workflows/MacOS.yml) |
+| Windows 2025 | Ubuntu + KDE Plasma | Apple-backed macOS 15 / 26 |
+| RDP / noVNC | XRDP / Webtop | SSH + experimental Apple VNC |
+| Native Win32 apps | Native Linux apps + Wine | Native macOS tooling |
+| [Windows guide ↓](#-windows-remote-workspace) | [Linux guide](linux/README.md) | [**macOS guide**](macos/README.md) |
 
-[**All workflow runs**](https://github.com/wawanwfs/RDP/actions) · [**Repository secrets**](https://github.com/wawanwfs/RDP/settings/secrets/actions) · [**Acceptance matrix**](docs/ACCEPTANCE_MATRIX.md) · [**Linux verification**](https://github.com/wawanwfs/RDP/actions/workflows/linux-workspace-checks.yml)
+[**All workflow runs**](https://github.com/wawanwfs/RDP/actions) · [**Repository secrets**](https://github.com/wawanwfs/RDP/settings/secrets/actions) · [**Acceptance matrix**](docs/ACCEPTANCE_MATRIX.md) · [**Linux verification**](https://github.com/wawanwfs/RDP/actions/workflows/linux-workspace-checks.yml) · [**macOS verification**](https://github.com/wawanwfs/RDP/actions/workflows/macos-workspace-checks.yml)
 
 </div>
 
@@ -30,24 +31,23 @@
 
 ## 🧭 Overview
 
-WFS Remote Workspaces menyediakan **dua workflow utama** yang dikelola terpisah dalam satu repository: Windows dan Linux. Workflow lain yang masih tersimpan di `.github/workflows/` adalah varian/legacy dan **bukan** titik masuk yang disarankan untuk dua workspace utama ini.
+WFS Remote Workspaces menyediakan **tiga workflow utama** yang dikelola dalam satu repository: **Windows, Linux, dan macOS native**. Workflow lama lain masih tersedia di `.github/workflows/` sebagai varian/legacy; gunakan tiga titik masuk resmi di tabel berikut untuk deployment dan pengujian.
 
-| Aspek | 🪟 Windows | 🐧 Linux |
-|:--|:--|:--|
-| Main workflow | [windows-remote-workspace-with-apps.yml](.github/workflows/windows-remote-workspace-with-apps.yml) | [linux-remote-workspace.yml](.github/workflows/linux-remote-workspace.yml) |
-| GitHub-hosted runner | Windows yang dipilih | Ubuntu 24.04 host + Webtop container sesuai distro |
-| Default desktop | Windows desktop | **Ubuntu KDE Plasma** |
-| Default remote | **RDP** | **XRDP** |
-| Remote browser | TightVNC + noVNC | LinuxServer Webtop + Selkies |
-| Akun RDP bawaan | `RDP` | `RDP` (case-sensitive) |
-| Hostname Tailscale bawaan | `rdp-runner` | `rdp-runner` |
-| Port RDP | TCP `3389` | TCP `3389` |
-| Web remote privat | TCP `6082` atau HTTPS `443` | HTTPS `6082` atau `443` |
-| Durasi pilihan | 1 / 3 / 6 jam | 1 / 3 / 6 jam |
-| Batas maksimal GitHub job | **360 menit total**, termasuk instalasi | **360 menit total**, termasuk instalasi |
-| Session persist setelah run berakhir? | Tidak | Tidak |
-| MetaTrader | Installer Windows | **Wine + installer publisher/broker resmi**, verifikasi binary |
-| Perangkat untuk mengakses | Windows, Mac, Android/iOS dengan klien remote | Windows, Mac, Android/iOS dengan klien remote |
+| Aspek | 🪟 Windows | 🐧 Linux | 🍎 macOS |
+|:--|:--|:--|:--|
+| Main workflow | [Windows](.github/workflows/windows-remote-workspace-with-apps.yml) | [Linux](.github/workflows/linux-remote-workspace.yml) | [macOS](.github/workflows/MacOS.yml) |
+| Host | GitHub Windows runner | Ubuntu runner + LinuxServer Webtop | **Genuine GitHub Apple macOS runner** |
+| Default desktop | Windows | Ubuntu KDE Plasma | macOS 15 / Apple Silicon |
+| Access method | **RDP** | **XRDP** | **SSH** + experimental Apple Screen Sharing |
+| Browser remote | noVNC option | Selkies Webtop option | No guaranteed browser GUI; native VNC is experimental |
+| User default | `RDP` | `RDP` | Actual macOS runner account (typically `runner`) |
+| Tailscale hostname | `rdp-runner` | `rdp-runner` | `rdp-runner` |
+| Primary remote port | TCP `3389` | TCP `3389` | SSH TCP `2222`; VNC TCP `5900` |
+| Session choice | 1 / 3 / 6 h | 1 / 3 / 6 h | 1 / 3 / 6 h (default **1h** to limit macOS usage cost) |
+| Job cap | 360 min total | 360 min total | 360 min total |
+| Storage | Ephemeral | Ephemeral | Ephemeral |
+| MetaTrader | Native Windows MT4/MT5 | Wine; MT5 GUI compatibility limited | WebTerminal only; no desktop EA |
+| CI | [Windows tests](.github/workflows/windows-workspace-checks.yml) | [Linux tests](.github/workflows/linux-workspace-checks.yml) | [Native macOS tests](.github/workflows/macos-workspace-checks.yml) |
 
 > [!IMPORTANT]
 > **Runner GitHub bukan VPS permanen.** Ketika job berakhir/dibatalkan, desktop, aplikasi, dan file lokal sementara akan hilang. Jangan menyimpan satu-satunya salinan data, bot, profil browser, akun, atau Expert Advisor di runner. **Jangan gunakan workflow ini untuk trading live tanpa backup dan pengawasan.**
@@ -55,48 +55,71 @@ WFS Remote Workspaces menyediakan **dua workflow utama** yang dikelola terpisah 
 ## 🧩 Architecture
 
 ```text
-                               YOUR DEVICE
-                    ┌──────────────────────────────┐
-                    │ Windows / Android / macOS     │
-                    │ RDP client / browser          │
-                    └───────────────┬──────────────┘
-                                    │
-                       Tailscale PRIVATE tailnet
-                                    │
-               ┌────────────────────┴──────────────────┐
-               │                                       │
-    ┌──────────▼───────────┐               ┌───────────▼─────────┐
-    │ WINDOWS WORKFLOW     │               │ LINUX WORKFLOW      │
-    │ Windows runner       │               │ Ubuntu runner       │
-    │ Native RDP :3389     │               │ Docker Webtop       │
-    │ TightVNC + noVNC     │               │ XRDP :3389          │
-    │ Web :6082 / :443     │               │ Selkies :6082/443   │
-    │ Native Windows apps  │               │ KDE / Xfce / MATE   │
-    │ Windows MT4/MT5      │               │ i3 / Ubuntu LXQt    │
-    └──────────────────────┘               │ Wine MT4 / MT5      │
-                                           └─────────────────────┘
+                       YOUR DEVICE
+        Windows / Android / macOS / Linux
+               connected to Tailscale
+                          │
+                PRIVATE TAILNET
+                          │
+       ┌──────────────────┼─────────────────┐
+       │                  │                 │
+  WINDOWS RDP         LINUX XRDP       macOS NATIVE
+  Windows runner      Docker Webtop     Apple macOS runner
+  :3389 RDP           :3389 XRDP        :2222 SSH
+  noVNC optional      Selkies optional  :5900 Screen Sharing*
+  native MT4/MT5      Chromium KDE      Safari + CLI tooling
+  Windows apps        Wine terminal     WebTerminal browser
+       │                  │                 │
+       └──────────────────┴─────────────────┘
+               GitHub Actions job
+            temporary, maximum 360 min
 ```
 
-Native Linux container **tidak menggunakan QEMU**. Sesi XRDP menjalankan desktop **X11 sesuai pilihan**. Browser/Webtop berjalan sebagai sesi terpisah; mengaktifkan `both` **tidak** berarti kedua koneksi mencerminkan layar yang sama.
+* **macOS VNC is not RDP.** A listening VNC port does not prove interactive GUI: modern Apple permissions and GitHub runner headless sessions can prevent screen control. See [macOS limitations and acceptance](macos/README.md). Hackintosh/non-Apple macOS emulation is not offered.
 
-## 🔐 First-time setup — sekali untuk kedua workflow
+Native Linux Webtop images do not require QEMU; Windows runs natively on its hosted runner, and macOS uses **genuine Apple-backed runners**. Nothing in this diagram represents a persistent VPS.
+
+## 🔐 First-time setup — shared access for all three workflows
 
 1. Pastikan [Tailscale](https://tailscale.com/download) aktif pada PC/HP yang akan digunakan mengakses desktop. Siapkan auth key dari [Tailscale Admin](https://login.tailscale.com/admin/settings/keys) dengan cakupan dan masa berlaku minimum yang diperlukan.
 2. Buka **[Settings → Secrets and variables → Actions](https://github.com/wawanwfs/RDP/settings/secrets/actions)** di repository.
 3. Tambahkan nama secret **persis** seperti tabel. Simpan **nilai** hanya di GitHub Secrets, jangan di YAML/README.
-4. Pilih workflow Windows atau Linux → **Run workflow** di branch `main`.
+4. Pilih workflow **Windows / Linux / macOS** → **Run workflow** di branch `main`.
 5. Setelah langkah instalasi dan koneksi siap, buka **Actions run → Summary** untuk membaca IP/URL tailnet, port, username, password *mode*, dan status masing-masing aplikasi.
 6. Sambungkan melalui klien RDP atau browser. Gunakan **Cancel workflow** untuk mengakhiri sesi lebih cepat.
 
 | GitHub Actions secret | Fungsi | Catatan |
 |:--|:--|:--|
-| `TAILSCALE_AUTH_KEY` | Menghubungkan runner ke tailnet privat | Diperlukan untuk keduanya |
-| `RDP_PASSWORD` | Password native RDP Windows dan XRDP Linux | Dipakai jika mode `same_from_secret` |
-| `VNC_PASSWORD` | Password remote browser/noVNC | Dipakai jika mode `same_from_secret` |
+| `TAILSCALE_AUTH_KEY` | Menghubungkan runner ke tailnet privat | Dipakai ketiga workflow |
+| `RDP_PASSWORD` | Password Windows RDP, Linux XRDP, **dan macOS SSH/VNC user** | macOS mensyaratkan minimal 12 byte; secret dipakai ulang meski protokol bukan RDP |
+| `VNC_PASSWORD` | Password remote browser/noVNC Windows/Linux | macOS memakai login akun macOS dari `RDP_PASSWORD`, bukan VNC legacy password |
 
 **Default akun Windows dan Linux adalah `RDP` kapital.** Linux membedakan `RDP` dan `rdp` sebagai dua akun berbeda. Password tidak diambil dari username, dan nilai secret tidak boleh ditempel di issue, log publik atau screenshot.
 
 **Password mode:** `same_from_secret` mempertahankan password rahasia yang sama pada setiap run. `random_each_run` tersedia di kedua workflow tetapi implementasi pelaporan berbeda; **pada Windows password acak dapat tercetak di Actions log pada repo publik**. Pada Linux password per-run diturunkan dari HMAC-SHA256 secret + Run ID, dan **tidak dicetak**. Untuk Linux, petunjuk perhitungan di PC lokal tersedia di [panduan Linux](linux/README.md).
+
+## 🍎 macOS Workspace — Genuine Apple Silicon / Intel
+
+**Default baru: macOS 15 + private Tailscale + SSH dan percobaan Screen Sharing (VNC)**. Pilih macOS 26 jika membutuhkan toolchain lebih baru, atau varian Intel jika aplikasi Anda membutuhkan x64. macOS tidak memakai server Microsoft RDP; jangan memakai `mstsc` untuk mengakses port 5900.
+
+| Item | Detail |
+|:--|:--|
+| **Launch** | [WFS macOS Remote Workspace](https://github.com/wawanwfs/RDP/actions/workflows/MacOS.yml) |
+| **Runners** | `macos-15`, `macos-26`, `macos-15-intel`, `macos-26-intel` |
+| **Remote mode** | `both` default, atau `ssh`/`vnc`; GUI **eksperimental** |
+| **SSH** | `ssh -p 2222 runner@100.x.x.x` di PowerShell Windows, ganti IP/user dari Summary |
+| **VNC** | VNC Viewer dari Windows, atau `vnc://100.x.x.x` dari Mac; login/kendali grafis belum dijamin |
+| **Apps** | Safari bawaan, opsional VS Code/Codex/Claude, toolchain dan WebTerminal browser |
+| **Sesi** | Default **1 jam**, opsi 3/6 jam; total job tetap maksimal 360 menit |
+| **Credentials** | Pakai kembali `TAILSCALE_AUTH_KEY` dan `RDP_PASSWORD`; password tidak dicetak |
+
+**Batasan penting:** Apple mengendalikan izin Screen Sharing pada macOS modern. GitHub-hosted runner dapat menjalankan proses WindowServer tetapi belum tentu menerima koneksi desktop yang bisa dikendalikan dari VNC viewer. Workflow mencatat **status VNC sebenarnya** dan tidak menonaktifkan SIP, mengubah TCC, atau memaksa autentikasi VNC legacy yang lebih lemah.
+
+Tidak ada opsi Hackintosh VM pada runner Windows/Linux. Mode yang tersedia adalah **macOS resmi di runner Apple**; untuk macOS desktop yang selalu aktif dan bisa dikendalikan penuh, gunakan Apple Mac self-hosted atau penyedia hosted Mac dengan screen sharing yang disetujui.
+
+[Lihat panduan macOS lengkap →](macos/README.md) · [Pengujian native macOS](https://github.com/wawanwfs/RDP/actions/workflows/macos-workspace-checks.yml)
+
+---
 
 ## 🐧 Linux Workspace — premium desktop without VM
 
