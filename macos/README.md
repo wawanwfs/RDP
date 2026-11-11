@@ -149,6 +149,22 @@ Sumber: [Apple Software License Agreement for macOS Tahoe](https://www.apple.com
 
 **After fixing:** start a **new** [macOS workflow](https://github.com/wawanwfs/RDP/actions/workflows/MacOS.yml) from the current `main` branch, choose `macos-15-intel`, remote `both`, username `wfsremote`, duration `1`. Do **not** use *Re-run jobs* on the old failure because GitHub reruns the original commit.
 
+### Run #43029810843 — macOS Tailscale step stayed active
+
+[Run #43029810843](https://github.com/wawanwfs/RDP/actions/runs/43029810843) uses **macOS 15 ARM64**, remote `both`, and commit `4a50d2b`. GitHub reports its **Tailscale action is in progress**, while checkout and initial secret/runner validation completed. SSH and Screen Sharing have **not started** in that run. Logs may be unavailable via the GitHub job-log endpoint until the job finishes; do not claim an auth-key, SSH, or VNC failure without those logs.
+
+A separate upstream issue, [tailscale/github-action#315](https://github.com/tailscale/github-action/issues/315), documents the action's macOS-specific `networksetup -setdnsservers Ethernet 100.100.100.100` behavior. It can interfere with the GitHub runner's DNS resolution and cause stalled/cancelled jobs. **This is a plausible risk, not proven to be the precise cause of run #43029810843.**
+
+Mitigations implemented for **new runs**:
+
+1. `macos/tailscale-dns-guard.sh backup` records the existing macOS Ethernet DNS mode before the action. A matching `restore` runs immediately after the action and prints non-sensitive backend/DNS diagnostics. It runs only on ephemeral GitHub-hosted macOS.
+2. Tailscale v4 action is limited to a 7-minute step, `tailscale up` to 90 seconds with 1 retry; the client version is pinned to stable `1.104.5` instead of the special `latest` value.
+3. The action receives `--accept-dns=false`. The upstream issue notes **this flag alone does not disable the action's macOS DNS override**, so the backup/restore is still necessary.
+4. If the step fails or times out, the workflow publishes an explicit unavailable status. No public SSH/VNC ports are opened as a workaround, and there is **no guarantee** the DNS restore runs if the underlying macOS runner loses connection to GitHub entirely.
+5. [macOS CI](https://github.com/wawanwfs/RDP/actions/runs/43032166865) passes **3/3 jobs** (static syntax/security + native ARM64/Intel DNS-backup and local SSH-auth checks). It **does not authenticate to the user's Tailscale account**, because CI intentionally has no production tailnet secrets.
+
+**Usage:** cancel the stuck manual run if it remains in progress, then start **a new** [macOS workflow](https://github.com/wawanwfs/RDP/actions/workflows/MacOS.yml) from `main`. Do **not** use *Re-run jobs* on a workflow that points to an older commit, as that reruns the old code.
+
 ## 8. Troubleshooting and acceptance gates
 
 | Symptom | Diagnose |
