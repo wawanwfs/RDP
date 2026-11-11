@@ -73,6 +73,11 @@ jobs:
           assert "Classic VNC password type 2:" in diagnose
           assert "kickstart -activate" not in diagnose
           displaydiag=pathlib.Path("macos/diagnose-display.sh").read_text(encoding="utf-8")
+          sessiondiag=pathlib.Path("macos/diagnose-desktop-session.sh").read_text(encoding="utf-8")
+          for required in ("launchctl print", "Finder", "Near-black pixel sample:", "screencapture -x", "launchctl asuser"):
+              assert required in sessiondiag
+          for forbidden in ("tccutil reset", "kickstart -activate", "dscl . -passwd", "rm -rf /Library"):
+              assert forbidden not in sessiondiag
           assert "CGGetActiveDisplayList" in displaydiag
           assert "screencapture -x" in displaydiag
           assert "stat -f %Su /dev/console" in displaydiag
@@ -92,6 +97,7 @@ jobs:
           bash -n macos/workspace.sh
           bash -n macos/diagnose-vnc.sh
           bash -n macos/diagnose-display.sh
+          bash -n macos/diagnose-desktop-session.sh
           bash -n macos/install-apps.sh
           bash -n macos/tailscale-dns-guard.sh
           echo "PASS: Bash syntax validated."
