@@ -1,0 +1,173 @@
+name: "🍎 macOS Remote Workspace"
+run-name: "🍎 macOS • ${{ inputs.runner_label }} • ${{ inputs.remote_access }} • ${{ inputs.duration_hours }}h"
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner_label:
+        description: "Genuine Apple-backed macOS image (no Hackintosh VM)"
+        required: true
+        type: choice
+        default: macos-15
+        options:
+          - macos-15
+          - macos-26
+          - macos-15-intel
+          - macos-26-intel
+      remote_username:
+        description: "Isolated temporary macOS user (never modifies system runner)"
+        type: string
+        required: true
+        default: wfsremote
+      remote_access:
+        description: "SSH is testable; Apple VNC is experimental on hosted runners"
+        required: true
+        type: choice
+        default: both
+        options:
+          - both
+          - ssh
+          - vnc
+      duration_hours:
+        description: "Duration (macOS minutes can incur higher Actions usage cost)"
+        required: true
+        type: choice
+        default: "1"
+        options: ["1", "3", "6"]
+      tailscale_hostname:
+        description: "Stable tailnet hostname (default rdp-runner for consistency)"
+        required: true
+        type: string
+        default: rdp-runner
+      hostname_mode:
+        description: "Reuse hostname or include run ID"
+        required: true
+        type: choice
+        default: same_each_run
+        options: [same_each_run, unique_each_run]
+      password_mode:
+        description: "Reuse RDP_PASSWORD GitHub secret or derive per-run password"
+        required: true
+        type: choice
+        default: same_from_secret
+        options: [same_from_secret, random_each_run]
+      ide_choice:
+        description: "Optional native macOS IDE"
+        required: true
+        type: choice
+        default: none
+        options: [none, vscode]
+      coding_agent_choice:
+        description: "Optional developer CLI; provider login remains manual"
+        required: true
+        type: choice
+        default: none
+        options: [none, codex, claude, both]
+      apps_bundle:
+        description: "Native macOS developer/media command-line inventory"
+        required: true
+        type: choice
+        default: none
+        options: [none, developer, media, all]
+      trading_choice:
+        description: "No native Mac MetaTrader installer; web only (no desktop EA)"
+        required: true
+        type: choice
+        default: none
+        options: [none, webterminal]
+
+# Do not start two macOS sessions with the same default tailnet hostname.
+concurrency:
+  group: wfs-macos-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  macos-workspace:
+    name: "Genuine macOS runner via private Tailscale SSH / experimental Screen Sharing"
+    runs-on: ${{ inputs.runner_label }}
+    timeout-minutes: 360
+    defaults:
+      run:
+        shell: bash
+    env:
+      WFS_MAC_USER: ${{ inputs.remote_username }}
+      WFS_REMOTE: ${{ inputs.remote_access }}
+      WFS_DURATION: ${{ inputs.duration_hours }}
+      WFS_HOSTNAME_BASE: ${{ inputs.tailscale_hostname }}
+      WFS_HOSTNAME_MODE: ${{ inputs.hostname_mode }}
+      WFS_PASSWORD_MODE: ${{ inputs.password_mode }}
+      WFS_IDE: ${{ inputs.ide_choice }}
+      WFS_AGENT: ${{ inputs.coding_agent_choice }}
+      WFS_APPS: ${{ inputs.apps_bundle }}
+      WFS_TRADING: ${{ inputs.trading_choice }}
+      WFS_REMOTE_SECRET: ${{ secrets.RDP_PASSWORD }}
+      WFS_MAC_SSH_STATUS: SKIPPED
+      WFS_MAC_VNC_STATUS: SKIPPED
+    steps:
+      - name: "📦 Checkout WFS source"
+        uses: actions/checkout@v4
+      - name: "🔍 Validate native macOS, runner safety, and secret"
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          bash macos/workspace.sh prepare
+          echo "macOS: $(sw_vers -productVersion), arch=$(uname -m), user=$(id -un)"
+          test -x /usr/bin/sudo
+      - name: "🛡️ Preserve macOS DNS and verify Tailscale auth key"
+        timeout-minutes: 2
+        env:
+          WFS_TS_AUTHKEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$WFS_TS_AUTHKEY" || {
+            echo "::error title=Missing Tailscale Key::TAILSCALE_AUTH_KEY repository secret is empty or not accessible."
+            exit 1
+          }
+          bash macos/tailscale-dns-guard.sh backup
+      - name: "🐾 Connect macOS runner to private Tailscale"
+        timeout-minutes: 7
+        uses: tailscale/github-action@v4
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTH_KEY }}
+          hostname: ${{ env.WFS_MAC_HOSTNAME }}
+          # Pin a stable release. The 'latest' special value may resolve
+          # macOS binaries from the upstream development branch.
+          version: 1.104.5
+          timeout: 90s
+          retry: "1"
+          args: --accept-dns=false
+          log-mode: normal
+      - name: "🌐 Restore runner DNS after Tailscale setup"
+        if: always()
+        timeout-minutes: 2
+        run: |
+          if test -f macos/tailscale-dns-guard.sh; then
+            bash macos/tailscale-dns-guard.sh restore
+            bash macos/tailscale-dns-guard.sh diagnose
+          fi
+      - name: "🔐 Setup isolated tailnet SSH and/or best-effort Screen Sharing"
+        timeout-minutes: 8
+        run: bash macos/workspace.sh setup
+      - name: "📦 Install and verify selected macOS tools (optional)"
+        if: inputs.ide_choice != 'none' || inputs.coding_agent_choice != 'none' || inputs.apps_bundle != 'none' || inputs.trading_choice != 'none'
+        timeout-minutes: 18
+        continue-on-error: true
+        run: bash macos/install-apps.sh
+      - name: "📊 Publish honest connection and GUI capability dashboard"
+        if: always()
+        run: |
+          if test -s "$RUNNER_TEMP/wfs-macos/ip"; then
+            bash macos/workspace.sh summary
+          else
+            echo "## WFS macOS setup not ready" >> "$GITHUB_STEP_SUMMARY"
+            echo "Tailscale or remote setup did not finish. No connection details have been verified." >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: "🟢 Private remote session Keep Alive (within GitHub job cap)"
+        timeout-minutes: 345
+        run: bash macos/workspace.sh keepalive
+      - name: "🧹 Cleanup session state"
+        if: always()
+        run: bash macos/workspace.sh cleanup
