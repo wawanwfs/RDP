@@ -1,5 +1,5 @@
-name: "🐧 WFS Linux Remote Workspace"
-run-name: "🐧 WFS Linux • ${{ inputs.distro }} / ${{ inputs.desktop }} • ${{ inputs.remote_access }} • ${{ inputs.duration_hours }}h"
+name: "🐧 Linux Remote Workspace"
+run-name: "🐧 Linux • ${{ inputs.distro }} / ${{ inputs.desktop }} • ${{ inputs.remote_access }} • ${{ inputs.duration_hours }}h"
 
 on:
   workflow_dispatch:
