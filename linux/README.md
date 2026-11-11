@@ -179,7 +179,7 @@ Jika ada aplikasi yang gagal, lihat kolom **Per-Application Results** di GitHub 
 
 ## 📈 MetaTrader 4/5 — installer otomatis dengan verifikasi nyata
 
-Pada menu `metatrader_choice`, pilih `mt4`, `mt5` atau `both`. Tahap tersendiri [`install-metatrader.sh`](install-metatrader.sh) berjalan setelah XRDP dan Chrome siap, tanpa memerlukan instalasi manual via RDP. Wine dan Xvfb diinstal dari repositori distro yang dipilih; installer MT5 dari MetaQuotes dan MT4 dari tautan resmi Exness melalui HTTPS, dan prefiks Wine terpisah berada di home user desktop.
+Pada menu `metatrader_choice`, pilih `mt4`, `mt5` atau `both`. Tahap tersendiri [`install-metatrader.sh`](install-metatrader.sh) berjalan setelah XRDP dan browser siap. Wine dan Xvfb diinstal dari repositori distro yang dipilih; installer MT5 berasal dari MetaQuotes sedangkan MT4 berasal dari tautan Exness resmi. Prefix Wine masing-masing berada di home pengguna. **MT5 mungkin perlu fallback browser/Windows jika GUI Wine tidak kompatibel.**
 
 | Pemilihan | Tindakan | Bukti pemasangan | Catatan |
 |:--|:--|:--|:--|
@@ -213,8 +213,8 @@ Pesan seperti pada screenshot KDE/RDP **tidak berarti Anda benar-benar menjalank
 
 Perubahan berikut dilakukan:
 
-1. Untuk **Linux**, installer MT5 beralih dari bootstrap MetaQuotes generik ke **installer Exness Windows yang ditautkan langsung dari situs resmi Exness** (`exness5setup.exe`) dengan Wine prefix tersendiri. Ini adalah percobaan kompatibilitas broker; bukan jaminan bahwa build MT5 yang baru bebas masalah anti-debug.
-2. CI menjalankan [`linux/test-metatrader-gui.sh`](test-metatrader-gui.sh), yaitu **peluncuran MT5 nyata pada Xvfb tanpa login broker**, dan mencari judul jendela **MetaTrader 5**, bukan sekadar proses `terminal64.exe`. Hasil GUI dilaporkan terpisah dari status installer: dialog error tidak dihitung sebagai terminal berfungsi.
+1. Untuk **Linux**, pengujian mencoba installer MT5 resmi Exness (`exness5setup.exe`) sebagai alternatif, tetapi mode `/auto` **tidak menghasilkan terminal** pada Wine di runner. Karena itu installer otomatis dikembalikan ke **paket resmi MetaQuotes** yang sebelumnya terbukti memasang `terminal64.exe`. **Keberhasilan instalasi bukan bukti MT5 dapat dibuka** pada build terbaru.
+2. CI menyediakan [`linux/test-metatrader-gui.sh`](test-metatrader-gui.sh), yaitu **peluncuran MT5 nyata pada Xvfb tanpa login broker**, dan mencari judul jendela **MetaTrader 5**, bukan sekadar proses `terminal64.exe`. Hasil GUI dilaporkan terpisah dari status installer: dialog error tidak dihitung sebagai terminal berfungsi.
 3. Sebagai fallback tanpa Wine, menu aplikasi menawarkan **MetaTrader WebTerminal (WFS fallback)** lewat Chromium di <https://web.metatrader.app/>. WebTerminal hanya mendukung fungsi trading berbasis browser dan **tidak menjalankan EA/script desktop**.
 4. Jika membutuhkan **MetaTrader desktop, MetaEditor, Expert Advisor, dan operasi stabil**, gunakan workflow **Windows RDP native** yang sudah membuktikan instalasi MT4/MT5 Windows. Uji login, chart, dan EA secara manual sebelum trading live.
 
