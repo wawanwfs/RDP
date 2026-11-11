@@ -115,7 +115,7 @@ Native Linux Webtop images do not require QEMU; Windows runs natively on its hos
 
 **Hasil CI macOS:** [3/3 berhasil pada Apple Silicon dan Intel](https://github.com/wawanwfs/RDP/actions/runs/42965871428): workflow, akun remote sementara, dan autentikasi SSH password melalui loopback. Koneksi dari PC Windows tetap perlu diuji di tailnet.
 
-**Batasan penting:** Apple mengendalikan izin Screen Sharing pada macOS modern. GitHub-hosted runner dapat menjalankan proses WindowServer tetapi belum tentu menerima koneksi desktop yang bisa dikendalikan dari VNC viewer. Workflow mencatat **status VNC sebenarnya** dan tidak menonaktifkan SIP, mengubah TCC, atau memaksa autentikasi VNC legacy yang lebih lemah.
+**Batasan penting:** Apple mengendalikan izin Screen Sharing pada macOS modern. GitHub-hosted runner dapat menjalankan proses WindowServer tetapi belum tentu menerima koneksi desktop yang bisa dikendalikan dari VNC viewer. Workflow mencatat **status VNC berdasarkan header RFB**, menghentikan mode VNC-only jika layanan tidak ada, dan tidak menonaktifkan SIP, mengubah TCC, atau memaksa autentikasi VNC legacy yang lebih lemah.
 
 Tidak ada opsi Hackintosh VM pada runner Windows/Linux. Mode yang tersedia adalah **macOS resmi di runner Apple**; untuk macOS desktop yang selalu aktif dan bisa dikendalikan penuh, gunakan Apple Mac self-hosted atau penyedia hosted Mac dengan screen sharing yang disetujui.
 
