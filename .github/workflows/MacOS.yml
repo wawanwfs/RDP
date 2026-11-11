@@ -1,606 +1,141 @@
-name: "🖥️ macOS Remote noVNC via Tailscale"
+name: "🍎 WFS macOS Remote Workspace"
+run-name: "🍎 WFS macOS • \${{ inputs.runner_label }} • \${{ inputs.remote_access }} • \${{ inputs.duration_hours }}h"
 
 on:
   workflow_dispatch:
     inputs:
       runner_label:
-        description: "GitHub macOS runner label"
+        description: "Genuine Apple-backed macOS image (no Hackintosh VM)"
         required: true
-        default: "macos-15"
         type: choice
+        default: macos-15
         options:
           - macos-15
-          - macos-14
-          - macos-latest
-      keepalive_minutes:
-        description: "How long to keep noVNC alive. GitHub-hosted runners max about 6 hours."
+          - macos-26
+          - macos-15-intel
+          - macos-26-intel
+      remote_access:
+        description: "SSH is testable; Apple VNC is experimental on hosted runners"
         required: true
-        default: "330"
+        type: choice
+        default: both
+        options:
+          - both
+          - ssh
+          - vnc
+      duration_hours:
+        description: "Duration (macOS minutes can incur higher Actions usage cost)"
+        required: true
+        type: choice
+        default: "1"
+        options: ["1", "3", "6"]
+      tailscale_hostname:
+        description: "Stable tailnet hostname (default rdp-runner for consistency)"
+        required: true
         type: string
-      tailscale_tags:
-        description: "Tailscale tags for OAuth/OIDC login, comma-separated (example: tag:ci)"
-        required: false
-        default: "tag:ci"
-        type: string
+        default: rdp-runner
+      hostname_mode:
+        description: "Reuse hostname or include run ID"
+        required: true
+        type: choice
+        default: same_each_run
+        options: [same_each_run, unique_each_run]
+      password_mode:
+        description: "Reuse RDP_PASSWORD GitHub secret or derive per-run password"
+        required: true
+        type: choice
+        default: same_from_secret
+        options: [same_from_secret, random_each_run]
+      ide_choice:
+        description: "Optional native macOS IDE"
+        required: true
+        type: choice
+        default: none
+        options: [none, vscode]
+      coding_agent_choice:
+        description: "Optional developer CLI; provider login remains manual"
+        required: true
+        type: choice
+        default: none
+        options: [none, codex, claude, both]
+      apps_bundle:
+        description: "Native macOS developer/media command-line inventory"
+        required: true
+        type: choice
+        default: none
+        options: [none, developer, media, all]
+      trading_choice:
+        description: "No native Mac MetaTrader installer; web only (no desktop EA)"
+        required: true
+        type: choice
+        default: none
+        options: [none, webterminal]
 
+# Do not start two macOS sessions with the same default tailnet hostname.
 concurrency:
-  group: macos-novnc-${{ github.ref }}
-  cancel-in-progress: true
+  group: wfs-macos-\${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: read
-  id-token: write
 
 jobs:
-  macos-novnc:
-    name: "macOS noVNC"
-    runs-on: ${{ inputs.runner_label }}
-    timeout-minutes: 355
-
+  macos-workspace:
+    name: "Genuine macOS runner via private Tailscale SSH / experimental Screen Sharing"
+    runs-on: \${{ inputs.runner_label }}
+    timeout-minutes: 360
+    defaults:
+      run:
+        shell: bash
     env:
-      NOVNC_VERSION: v1.5.0
-      NOVNC_DIR: /opt/novnc
-      WEBSOCKIFY_VENV: /tmp/novnc-venv
-      WEBSOCKIFY_PID: /tmp/websockify.pid
-      WEBSOCKIFY_LOG: /tmp/websockify.log
-      TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
-      TAILSCALE_AUTH_KEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
-      TAILSCALE_OAUTH_CLIENT_ID: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
-      TAILSCALE_OAUTH_SECRET: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
-      TAILSCALE_AUDIENCE: ${{ secrets.TAILSCALE_AUDIENCE }}
-      TAILSCALE_TAGS: ${{ inputs.tailscale_tags }}
-
+      WFS_REMOTE: \${{ inputs.remote_access }}
+      WFS_DURATION: \${{ inputs.duration_hours }}
+      WFS_HOSTNAME_BASE: \${{ inputs.tailscale_hostname }}
+      WFS_HOSTNAME_MODE: \${{ inputs.hostname_mode }}
+      WFS_PASSWORD_MODE: \${{ inputs.password_mode }}
+      WFS_IDE: \${{ inputs.ide_choice }}
+      WFS_AGENT: \${{ inputs.coding_agent_choice }}
+      WFS_APPS: \${{ inputs.apps_bundle }}
+      WFS_TRADING: \${{ inputs.trading_choice }}
+      WFS_REMOTE_SECRET: \${{ secrets.RDP_PASSWORD }}
+      WFS_MAC_SSH_STATUS: SKIPPED
+      WFS_MAC_VNC_STATUS: SKIPPED
     steps:
-      - name: "✅ Validate input and Tailscale secret"
-        shell: bash
+      - name: "📦 Checkout WFS source"
+        uses: actions/checkout@v4
+      - name: "🔍 Validate native macOS, runner safety, and secret"
+        timeout-minutes: 3
         run: |
-          set -Eeuo pipefail
-
-          if [[ -z "$TAILSCALE_AUTHKEY" && -z "$TAILSCALE_AUTH_KEY" && -z "$TAILSCALE_OAUTH_CLIENT_ID" && -z "$TAILSCALE_OAUTH_SECRET" && -z "$TAILSCALE_AUDIENCE" ]]; then
-            echo "❌ Missing Tailscale credential. Provide either:"
-            echo "   - TAILSCALE_AUTHKEY or legacy TAILSCALE_AUTH_KEY"
-            echo "   - TAILSCALE_OAUTH_CLIENT_ID + TAILSCALE_OAUTH_SECRET + tailscale_tags"
-            echo "   - TAILSCALE_OAUTH_CLIENT_ID + TAILSCALE_AUDIENCE + tailscale_tags"
-            exit 1
-          fi
-
-          if [[ -n "$TAILSCALE_TAGS" ]]; then
-            echo "✅ Tailscale tags: $TAILSCALE_TAGS"
-          fi
-
-          KEEPALIVE_MINUTES="${{ inputs.keepalive_minutes }}"
-          if ! [[ "$KEEPALIVE_MINUTES" =~ ^[0-9]+$ ]]; then
-            echo "❌ keepalive_minutes must be a number"
-            exit 1
-          fi
-          if (( KEEPALIVE_MINUTES < 5 )); then KEEPALIVE_MINUTES=5; fi
-          if (( KEEPALIVE_MINUTES > 350 )); then KEEPALIVE_MINUTES=350; fi
-          echo "KEEPALIVE_MINUTES=$KEEPALIVE_MINUTES" >> "$GITHUB_ENV"
-          echo "✅ Input valid. Keep-alive: ${KEEPALIVE_MINUTES} minutes"
-
-      - name: "👤 Resolve active GUI user"
-        shell: bash
+          set -euo pipefail
+          bash macos/workspace.sh prepare
+          echo "macOS: $(sw_vers -productVersion), arch=$(uname -m), user=$(id -un)"
+          test -x /usr/bin/sudo
+      - name: "🐾 Connect macOS runner to private Tailscale"
+        uses: tailscale/github-action@v4
+        with:
+          authkey: \${{ secrets.TAILSCALE_AUTH_KEY }}
+          hostname: \${{ env.WFS_MAC_HOSTNAME }}
+          version: latest
+      - name: "🔐 Setup isolated tailnet SSH and/or best-effort Screen Sharing"
+        timeout-minutes: 8
+        run: bash macos/workspace.sh setup
+      - name: "📦 Install and verify selected macOS tools (optional)"
+        if: inputs.ide_choice != 'none' || inputs.coding_agent_choice != 'none' || inputs.apps_bundle != 'none' || inputs.trading_choice != 'none'
+        timeout-minutes: 18
+        continue-on-error: true
+        run: bash macos/install-apps.sh
+      - name: "📊 Publish honest connection and GUI capability dashboard"
+        if: always()
         run: |
-          set -Eeuo pipefail
-
-          # Blank black noVNC usually happens when VNC is attached to a user
-          # that has no active macOS GUI session. Use the active console user
-          # of the GitHub macOS runner instead of creating a new remoteadmin user.
-          CONSOLE_USER="$(stat -f %Su /dev/console 2>/dev/null || true)"
-          if [[ -z "$CONSOLE_USER" || "$CONSOLE_USER" == "root" || "$CONSOLE_USER" == "loginwindow" ]]; then
-            echo "❌ Could not resolve the active console user"
-            echo "   /dev/console returned: '${CONSOLE_USER:-<empty>}'"
-            exit 1
-          fi
-          GUI_UID="$(id -u "$CONSOLE_USER")"
-
-          echo "REMOTE_USER=$CONSOLE_USER" >> "$GITHUB_ENV"
-          echo "GUI_UID=$GUI_UID" >> "$GITHUB_ENV"
-          echo "✅ Active GUI user: $CONSOLE_USER (uid=$GUI_UID)"
-
-      - name: "🔑 Generate unified login password"
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          # Apple legacy VNC authentication uses an 8-character password limit.
-          # To avoid mismatch, macOS login password and noVNC/VNC password are identical.
-          SHARED_PASSWORD="$(python3 - <<'PY'
-          import secrets, string
-          alphabet = string.ascii_letters + string.digits
-          print(''.join(secrets.choice(alphabet) for _ in range(8)))
-          PY
-          )"
-
-          echo "REMOTE_PASSWORD=$SHARED_PASSWORD" >> "$GITHUB_ENV"
-          echo "VNC_PASSWORD=$SHARED_PASSWORD" >> "$GITHUB_ENV"
-          echo "✅ Password generated. Same password will be used for noVNC and macOS login."
-
-      - name: "⚡ Optimize and keep display awake"
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          ok() { printf '  ✅ %s\n' "$*"; }
-
-          defaults write com.apple.universalaccess reduceTransparency -bool true 2>/dev/null || true
-          defaults write com.apple.universalaccess reduceMotion -bool true 2>/dev/null || true
-          defaults write NSGlobalDomain NSWindowResizeTime -float 0.001 2>/dev/null || true
-          defaults write com.apple.dock autohide-delay -float 0 2>/dev/null || true
-          defaults write NSGlobalDomain NSAppSleepDisabled -bool true 2>/dev/null || true
-          ok "UI animation reduced"
-
-          sudo mdutil -a -i off 2>/dev/null || true
-          ok "Spotlight disabled"
-
-          sudo systemsetup -setsleep Never 2>/dev/null || true
-          sudo systemsetup -setdisplaysleep Never 2>/dev/null || true
-          sudo pmset -a sleep 0 displaysleep 0 disksleep 0 powernap 0 2>/dev/null || true
-          ok "Sleep/display sleep disabled"
-
-          nohup caffeinate -dimsu > /tmp/caffeinate.log 2>&1 &
-          echo "$!" > /tmp/caffeinate.pid
-          ok "caffeinate started to prevent black/sleeping display"
-
-      - name: "🛡️ Best-effort Screen Recording permission for Screen Sharing"
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          ok() { printf '  ✅ %s\n' "$*"; }
-          warn() { printf '  ⚠️  %s\n' "$*"; }
-
-          # macOS may show black screen if Screen Sharing / ARD has no screen-capture permission.
-          # GitHub-hosted macOS does not expose System Settings UI, so this is best effort only.
-          TCC_DB="/Library/Application Support/com.apple.TCC/TCC.db"
-          if [[ ! -f "$TCC_DB" ]]; then
-            warn "System TCC database not found; skipping TCC best-effort grant"
-            exit 0
-          fi
-
-          grant_tcc_auth_value() {
-            local service="$1"
-            local client="$2"
-            local client_type="$3"
-            sudo sqlite3 "$TCC_DB" "INSERT OR REPLACE INTO access
-              (service, client, client_type, auth_value, auth_reason, auth_version,
-               csreq, policy_id, indirect_object_identifier_type, indirect_object_identifier,
-               indirect_object_code_identity, flags, last_modified)
-              VALUES
-              ('$service', '$client', $client_type, 2, 4, 1,
-               NULL, NULL, 0, 'UNUSED', NULL, 0, strftime('%s','now'));" 2>/dev/null || true
-          }
-
-          for service in kTCCServiceScreenCapture kTCCServiceAccessibility kTCCServicePostEvent; do
-            grant_tcc_auth_value "$service" "com.apple.screensharing.agent" 0
-            grant_tcc_auth_value "$service" "com.apple.RemoteManagement" 0
-            grant_tcc_auth_value "$service" "/System/Library/CoreServices/RemoteManagement/ARDAgent.app" 1
-            grant_tcc_auth_value "$service" "/System/Library/CoreServices/RemoteManagement/screensharingd.bundle/Contents/MacOS/screensharingd" 1
-          done
-
-          sudo killall tccd 2>/dev/null || true
-          ok "TCC best-effort permissions applied"
-
-      - name: "🔐 Enable macOS VNC / Screen Sharing on active user"
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          ok() { printf '  ✅ %s\n' "$*"; }
-          warn() { printf '  ⚠️  %s\n' "$*"; }
-          die() { printf '  ❌ %s\n' "$*"; exit 1; }
-          step() { printf '\n▶ %s\n' "$*"; }
-
-          KICKSTART="/System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart"
-          [[ -x "$KICKSTART" ]] || die "kickstart tool not found: $KICKSTART"
-
-          step "Set password for active GUI user: $REMOTE_USER"
-          sudo sysadminctl -resetPasswordFor "$REMOTE_USER" -newPassword "$REMOTE_PASSWORD" 2>/tmp/pass-reset.log \
-            && ok "Password active user direset" \
-            || { warn "sysadminctl reset failed; trying dscl fallback"; sudo dscl . -passwd "/Users/$REMOTE_USER" "$REMOTE_PASSWORD" 2>/dev/null || cat /tmp/pass-reset.log || true; }
-          sudo dseditgroup -o edit -a "$REMOTE_USER" -t user admin 2>/dev/null || true
-          ok "Active GUI user dipastikan berada di grup admin"
-
-          step "Reset ARD/Screen Sharing"
-          sudo "$KICKSTART" -deactivate -stop 2>/dev/null || true
-          sudo launchctl bootout system /System/Library/LaunchDaemons/com.apple.screensharing.plist 2>/dev/null || true
-          sudo launchctl disable system/com.apple.screensharing 2>/dev/null || true
-          sleep 2
-
-          step "Enable legacy VNC password and console display"
-          sudo defaults write /Library/Preferences/com.apple.RemoteManagement VNCLegacyConnectionsAllowed -bool true 2>/dev/null || true
-          sudo defaults write /Library/Preferences/com.apple.RemoteManagement VNCAlwaysStartOnConsole -bool true 2>/dev/null || true
-
-          step "Activate Apple Remote Desktop"
-          sudo "$KICKSTART" \
-            -activate \
-            -configure -access -on \
-            -configure -allowAccessFor -allUsers \
-            -configure -privs -all \
-            -clientopts -setvnclegacy -vnclegacy yes \
-            -clientopts -setvncpw -vncpw "$VNC_PASSWORD" \
-            -restart -agent -menu 2>/tmp/kickstart.log \
-            && ok "ARD aktif" \
-            || { warn "kickstart returned non-zero; showing diagnostic"; cat /tmp/kickstart.log || true; }
-
-          step "Start Screen Sharing launch service"
-          sudo launchctl enable system/com.apple.screensharing 2>/dev/null || true
-          sudo launchctl bootstrap system /System/Library/LaunchDaemons/com.apple.screensharing.plist 2>/dev/null || true
-          sudo launchctl kickstart -k system/com.apple.screensharing 2>/dev/null || true
-          sleep 5
-
-          step "Wait VNC port 5900"
-          VNC_OK=false
-          for i in $(seq 1 30); do
-            if nc -z 127.0.0.1 5900 2>/dev/null; then
-              VNC_OK=true
-              ok "VNC listening di 127.0.0.1:5900 pada attempt $i/30"
-              break
-            fi
-            printf '  ... attempt %02d/30\r' "$i"
-            sleep 2
-          done
-          echo
-          if [[ "$VNC_OK" != "true" ]]; then
-            sudo lsof -nP -iTCP:5900 -sTCP:LISTEN 2>/dev/null || true
-            sudo launchctl list | grep -Ei 'screen|remote|ard' || true
-            die "VNC port 5900 tidak aktif"
-          fi
-
-      - name: "🖼️ Force active desktop session and verify screenshot"
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          ok() { printf '  ✅ %s\n' "$*"; }
-          warn() { printf '  ⚠️  %s\n' "$*"; }
-
-          run_gui() {
-            sudo launchctl asuser "$GUI_UID" sudo -u "$REMOTE_USER" "$@"
-          }
-
-          run_gui open -a Finder
-          run_gui open -a Terminal
-          sleep 3
-          ok "Finder & Terminal launched on active GUI user: $REMOTE_USER"
-
-          for wp in \
-            "/System/Library/Desktop Pictures/Sonoma.heic" \
-            "/System/Library/Desktop Pictures/Monterey Graphic.heic" \
-            "/System/Library/Desktop Pictures/Big Sur.heic" \
-            "/System/Library/Desktop Pictures/Catalina.heic"; do
-            if [[ -f "$wp" ]]; then
-              run_gui osascript -e "tell application \"System Events\" to set picture of every desktop to \"$wp\""
-              ok "Wallpaper attempted: $(basename "$wp")"
-              break
-            fi
-          done
-
-          # Create a visible marker on Desktop so black-screen diagnosis is easier.
-          DESKTOP="/Users/$REMOTE_USER/Desktop"
-          mkdir -p "$DESKTOP" 2>/dev/null || true
-          cat > "$DESKTOP/NO_VNC_READY.txt" <<TXT
-          noVNC is connected to active user: $REMOTE_USER
-          If you can read this file, the remote desktop is working.
-          TXT
-          sudo chown "$REMOTE_USER":staff "$DESKTOP/NO_VNC_READY.txt" 2>/dev/null || true
-
-          if screencapture -x /tmp/display_test.png 2>/dev/null; then
-            bytes="$(wc -c < /tmp/display_test.png | tr -d ' ')"
-            ok "Display aktif; screenshot ${bytes} bytes"
-            python3 - <<'PY' || true
-          from pathlib import Path
-          p = Path('/tmp/display_test.png')
-          if p.exists() and p.stat().st_size < 20000:
-              print('  ⚠️  Screenshot size is very small; display may still be black/headless')
-          PY
+          if test -s "$RUNNER_TEMP/wfs-macos/ip"; then
+            bash macos/workspace.sh summary
           else
-            warn "screencapture failed; VNC may still run but desktop may be headless"
+            echo "## WFS macOS setup not ready" >> "$GITHUB_STEP_SUMMARY"
+            echo "Tailscale or remote setup did not finish. No connection details have been verified." >> "$GITHUB_STEP_SUMMARY"
           fi
-
-      - name: "📦 Install noVNC + websockify + VNC test dependencies"
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          ok() { printf '  ✅ %s\n' "$*"; }
-          step() { printf '\n▶ %s\n' "$*"; }
-
-          step "Create Python virtual environment"
-          rm -rf "$WEBSOCKIFY_VENV"
-          python3 -m venv "$WEBSOCKIFY_VENV"
-          "$WEBSOCKIFY_VENV/bin/python" -m pip install --upgrade pip setuptools wheel -q
-          "$WEBSOCKIFY_VENV/bin/python" -m pip install websockify pycryptodome -q
-          echo "WEBSOCKIFY_PY=$WEBSOCKIFY_VENV/bin/python" >> "$GITHUB_ENV"
-          ok "websockify + pycryptodome installed inside venv"
-
-          step "Install noVNC ${NOVNC_VERSION}"
-          curl -fsSL "https://github.com/novnc/noVNC/archive/refs/tags/${NOVNC_VERSION}.tar.gz" -o /tmp/novnc.tar.gz
-          sudo rm -rf "$NOVNC_DIR"
-          sudo mkdir -p "$NOVNC_DIR"
-          sudo tar xzf /tmp/novnc.tar.gz -C "$NOVNC_DIR" --strip-components=1
-          rm -f /tmp/novnc.tar.gz
-          sudo ln -sf "$NOVNC_DIR/vnc.html" "$NOVNC_DIR/index.html"
-          ok "noVNC installed: $NOVNC_DIR"
-
-      - name: "🧪 Test VNC password before showing URL"
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          ok() { printf '  ✅ %s\n' "$*"; }
-          warn() { printf '  ⚠️  %s\n' "$*"; }
-          die() { printf '  ❌ %s\n' "$*"; exit 1; }
-          step() { printf '\n▶ %s\n' "$*"; }
-
-          cat > /tmp/vnc_auth_check.py <<'PY'
-          import os, socket, struct
-          from Crypto.Cipher import DES
-
-          host = os.environ.get("VNC_HOST", "127.0.0.1")
-          port = int(os.environ.get("VNC_PORT", "5900"))
-          password = os.environ["VNC_PASSWORD"]
-
-          def recvn(sock, n):
-              data = b""
-              while len(data) < n:
-                  chunk = sock.recv(n - len(data))
-                  if not chunk:
-                      raise RuntimeError("connection closed while reading")
-                  data += chunk
-              return data
-
-          def revbits(byte):
-              return int(f"{byte:08b}"[::-1], 2)
-
-          def vnc_response(challenge, pw):
-              raw = pw.encode("latin-1", "ignore")[:8].ljust(8, b"\0")
-              key = bytes(revbits(b) for b in raw)
-              return DES.new(key, DES.MODE_ECB).encrypt(challenge)
-
-          with socket.create_connection((host, port), timeout=10) as s:
-              proto = recvn(s, 12)
-              if not proto.startswith(b"RFB "):
-                  raise RuntimeError(f"unexpected protocol header: {proto!r}")
-
-              s.sendall(b"RFB 003.008\n")
-              n = recvn(s, 1)[0]
-              if n == 0:
-                  msg_len = struct.unpack(">I", recvn(s, 4))[0]
-                  reason = recvn(s, msg_len).decode("utf-8", "replace")
-                  raise RuntimeError(f"server refused before auth: {reason}")
-
-              sec_types = list(recvn(s, n))
-              print("Offered security types:", sec_types)
-              if 2 not in sec_types:
-                  raise RuntimeError("VNCAuth security type 2 not offered. Legacy VNC password is not active.")
-
-              s.sendall(bytes([2]))
-              challenge = recvn(s, 16)
-              s.sendall(vnc_response(challenge, password))
-              result = struct.unpack(">I", recvn(s, 4))[0]
-              if result != 0:
-                  reason = ""
-                  try:
-                      msg_len = struct.unpack(">I", recvn(s, 4))[0]
-                      if msg_len:
-                          reason = recvn(s, msg_len).decode("utf-8", "replace")
-                  except Exception:
-                      pass
-                  raise RuntimeError(f"VNC authentication failed. Result={result}. {reason}")
-
-          print("VNC authentication OK")
-          PY
-
-          step "Run VNC auth self-test"
-          if "$WEBSOCKIFY_PY" /tmp/vnc_auth_check.py; then
-            ok "VNC password verified against 127.0.0.1:5900"
-          else
-            warn "First auth test failed. Re-applying ARD VNC password once..."
-            KICKSTART="/System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart"
-            sudo "$KICKSTART" \
-              -activate \
-              -configure -access -on \
-              -configure -allowAccessFor -allUsers \
-              -configure -privs -all \
-              -clientopts -setvnclegacy -vnclegacy yes \
-              -clientopts -setvncpw -vncpw "$VNC_PASSWORD" \
-              -restart -agent -menu 2>/tmp/kickstart-retry.log || true
-            sudo launchctl kickstart -k system/com.apple.screensharing 2>/dev/null || true
-            sleep 5
-            "$WEBSOCKIFY_PY" /tmp/vnc_auth_check.py \
-              && ok "VNC password verified after retry" \
-              || { cat /tmp/kickstart-retry.log || true; die "VNC auth tetap gagal. URL tidak akan ditampilkan karena credential belum valid."; }
-          fi
-
-      - name: "🔒 Generate self-signed TLS certificate"
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-            -keyout /tmp/novnc.key \
-            -out /tmp/novnc.crt \
-            -subj "/C=ID/ST=Jakarta/L=Jakarta/O=Runner/CN=localhost" \
-            2>/dev/null
-          echo "✅ Self-signed TLS certificate dibuat"
-
-      - name: "🌐 Start websockify noVNC server"
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          ok() { printf '  ✅ %s\n' "$*"; }
-          die() { printf '  ❌ %s\n' "$*"; exit 1; }
-
-          if [[ -f "$WEBSOCKIFY_PID" ]]; then
-            oldpid="$(cat "$WEBSOCKIFY_PID" 2>/dev/null || true)"
-            if [[ -n "$oldpid" ]] && kill -0 "$oldpid" 2>/dev/null; then
-              kill "$oldpid" 2>/dev/null || true
-              sleep 1
-            fi
-          fi
-
-          : > "$WEBSOCKIFY_LOG"
-          nohup "$WEBSOCKIFY_PY" -m websockify \
-            --web="$NOVNC_DIR" \
-            --cert=/tmp/novnc.crt \
-            --key=/tmp/novnc.key \
-            --ssl-only \
-            --heartbeat=30 \
-            0.0.0.0:6080 127.0.0.1:5900 \
-            > "$WEBSOCKIFY_LOG" 2>&1 &
-          echo "$!" > "$WEBSOCKIFY_PID"
-          sleep 4
-
-          if nc -z 127.0.0.1 6080 2>/dev/null; then
-            ok "websockify aktif di port 6080"
-          else
-            cat "$WEBSOCKIFY_LOG" || true
-            die "websockify gagal start"
-          fi
-
-          curl -kfsS --max-time 10 https://127.0.0.1:6080/ >/tmp/novnc-index.html \
-            && ok "noVNC HTTPS index dapat diakses lokal" \
-            || { cat "$WEBSOCKIFY_LOG" || true; die "noVNC HTTPS index gagal diakses"; }
-
-      - name: "🔗 Connect Tailscale using TAILSCALE_AUTHKEY"
-        if: ${{ env.TAILSCALE_AUTHKEY != '' }}
-        uses: tailscale/github-action@v4
-        with:
-          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
-          hostname: mac-runner-${{ github.run_id }}
-
-      - name: "🔗 Connect Tailscale using legacy TAILSCALE_AUTH_KEY"
-        if: ${{ env.TAILSCALE_AUTHKEY == '' && env.TAILSCALE_AUTH_KEY != '' }}
-        uses: tailscale/github-action@v4
-        with:
-          authkey: ${{ secrets.TAILSCALE_AUTH_KEY }}
-          hostname: mac-runner-${{ github.run_id }}
-
-      - name: "🔗 Connect Tailscale using OAuth client"
-        if: ${{ env.TAILSCALE_AUTHKEY == '' && env.TAILSCALE_AUTH_KEY == '' && env.TAILSCALE_OAUTH_CLIENT_ID != '' && env.TAILSCALE_OAUTH_SECRET != '' }}
-        uses: tailscale/github-action@v4
-        with:
-          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
-          oauth-secret: ${{ secrets.TAILSCALE_OAUTH_SECRET }}
-          tags: ${{ inputs.tailscale_tags }}
-          hostname: mac-runner-${{ github.run_id }}
-
-      - name: "🔗 Connect Tailscale using workload identity"
-        if: ${{ env.TAILSCALE_AUTHKEY == '' && env.TAILSCALE_AUTH_KEY == '' && env.TAILSCALE_OAUTH_CLIENT_ID != '' && env.TAILSCALE_OAUTH_SECRET == '' && env.TAILSCALE_AUDIENCE != '' }}
-        uses: tailscale/github-action@v4
-        with:
-          oauth-client-id: ${{ secrets.TAILSCALE_OAUTH_CLIENT_ID }}
-          audience: ${{ secrets.TAILSCALE_AUDIENCE }}
-          tags: ${{ inputs.tailscale_tags }}
-          hostname: mac-runner-${{ github.run_id }}
-
-      - name: "📡 Resolve Tailscale IP"
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-          ok() { printf '  ✅ %s\n' "$*"; }
-          die() { printf '  ❌ %s\n' "$*"; exit 1; }
-
-          TS_IP=""
-          for i in $(seq 1 30); do
-            TS_IP="$(tailscale ip -4 2>/dev/null | head -n1 || true)"
-            if [[ -n "$TS_IP" ]]; then
-              break
-            fi
-            printf '  ... waiting Tailscale IP %02d/30\r' "$i"
-            sleep 2
-          done
-          echo
-          [[ -n "$TS_IP" ]] || { tailscale status || true; die "Tailscale IP tidak ditemukan"; }
-          echo "TAILSCALE_IP=$TS_IP" >> "$GITHUB_ENV"
-          ok "Tailscale IP: $TS_IP"
-
-      - name: "📋 Access info and keep alive"
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          restart_websockify() {
-            if [[ -f "$WEBSOCKIFY_PID" ]]; then
-              pid="$(cat "$WEBSOCKIFY_PID" 2>/dev/null || true)"
-              if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
-                kill "$pid" 2>/dev/null || true
-                sleep 1
-              fi
-            fi
-            : > "$WEBSOCKIFY_LOG"
-            nohup "$WEBSOCKIFY_PY" -m websockify \
-              --web="$NOVNC_DIR" \
-              --cert=/tmp/novnc.crt \
-              --key=/tmp/novnc.key \
-              --ssl-only \
-              --heartbeat=30 \
-              0.0.0.0:6080 127.0.0.1:5900 \
-              > "$WEBSOCKIFY_LOG" 2>&1 &
-            echo "$!" > "$WEBSOCKIFY_PID"
-          }
-
-          BASE_URL="https://${TAILSCALE_IP}:6080"
-          URL="${BASE_URL}/vnc.html?autoconnect=true&reconnect=true&resize=scale&path=websockify"
-
-          cat <<EOF_SUMMARY >> "$GITHUB_STEP_SUMMARY"
-          # macOS noVNC Ready
-
-          ## Recommended URL
-          $URL
-
-          ## Login
-          The workflow now connects VNC to the active GUI user to prevent black-screen sessions.
-
-          | Field | Value |
-          |---|---|
-          | noVNC URL | $URL |
-          | noVNC username, only if asked | $REMOTE_USER |
-          | noVNC/VNC password | $VNC_PASSWORD |
-          | macOS username | $REMOTE_USER |
-          | macOS password | $REMOTE_PASSWORD |
-
-          ## If browser still shows a black page
-          1. Press the noVNC side tab on the left.
-          2. Disconnect, then reconnect.
-          3. Use resize mode: scale, not remote resize.
-          4. Refresh the recommended URL above.
-          EOF_SUMMARY
-
-          echo
-          echo "============================================================"
-          echo "macOS noVNC Ready"
-          echo "Recommended URL      : $URL"
-          echo "Fallback URL         : ${BASE_URL}/vnc.html"
-          echo "noVNC username       : $REMOTE_USER   (only if asked)"
-          echo "noVNC/VNC password   : $VNC_PASSWORD"
-          echo "macOS username       : $REMOTE_USER"
-          echo "macOS password       : $REMOTE_PASSWORD"
-          echo "IMPORTANT            : Uses active GUI user to avoid black screen."
-          echo "============================================================"
-          echo
-
-          end=$((SECONDS + KEEPALIVE_MINUTES * 60))
-          tick=0
-          while (( SECONDS < end )); do
-            tick=$((tick + 1))
-            ts="$(date '+%H:%M:%S')"
-
-            if ! nc -z 127.0.0.1 5900 2>/dev/null; then
-              echo "⚠️ [$ts] VNC 5900 down. Restarting Screen Sharing..."
-              sudo launchctl kickstart -k system/com.apple.screensharing 2>/dev/null || true
-              sleep 4
-            fi
-
-            if ! nc -z 127.0.0.1 6080 2>/dev/null; then
-              echo "⚠️ [$ts] websockify 6080 down. Restarting..."
-              restart_websockify
-              sleep 4
-            fi
-
-            if (( tick % 3 == 0 )); then
-              sudo launchctl asuser "$GUI_UID" sudo -u "$REMOTE_USER" open -a Finder 2>/dev/null || true
-            fi
-
-            echo "✅ [$ts] alive #$tick | $URL"
-            sleep 300
-          done
-
-          echo "Keep-alive finished after ${KEEPALIVE_MINUTES} minutes."
+      - name: "🟢 Private remote session Keep Alive (within GitHub job cap)"
+        timeout-minutes: 345
+        run: bash macos/workspace.sh keepalive
+      - name: "🧹 Cleanup session state"
+        if: always()
+        run: bash macos/workspace.sh cleanup
