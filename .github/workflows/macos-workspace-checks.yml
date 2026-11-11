@@ -91,6 +91,11 @@ jobs:
           assert "6081" in pathlib.Path("macos/gui-preview.py").read_text(encoding="utf-8")
           assert "100.64.0.0/10" in pathlib.Path("macos/gui-preview.py").read_text(encoding="utf-8")
           assert "WWW-Authenticate" in pathlib.Path("macos/gui-preview.py").read_text(encoding="utf-8")
+          ssh_launcher=pathlib.Path("macos/launch-preview-ssh.sh").read_text(encoding="utf-8")
+          assert "WFS_PREVIEW_IP" in ssh_launcher
+          assert "chmod 600" in ssh_launcher
+          assert "macos/gui-preview.py" in ssh_launcher
+          assert "screencapture" not in ssh_launcher
           assert 'def do_POST' in pathlib.Path("macos/gui-preview.py").read_text(encoding="utf-8")
           assert "bash macos/workspace.sh" in workflow
           assert "bash macos/install-apps.sh" in workflow
@@ -108,6 +113,7 @@ jobs:
           bash -n macos/diagnose-desktop-session.sh
           bash -n macos/install-apps.sh
           bash -n macos/start-gui-preview.sh
+          bash -n macos/launch-preview-ssh.sh
           bash -n macos/test-gui-preview.sh
           python3 -m py_compile macos/gui-preview.py
           bash -n macos/tailscale-dns-guard.sh
