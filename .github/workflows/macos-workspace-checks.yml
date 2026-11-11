@@ -63,6 +63,20 @@ jobs:
           bash -n macos/workspace.sh
           bash -n macos/install-apps.sh
           echo "PASS: Bash syntax validated."
+      - name: "🧪 Regression: SSH/VNC status must update current process and GITHUB_ENV"
+        env:
+          WFS_MAC_USER: wfsremote
+          WFS_REMOTE: both
+          WFS_DURATION: "1"
+          WFS_HOSTNAME_BASE: rdp-runner
+          WFS_HOSTNAME_MODE: same_each_run
+          WFS_PASSWORD_MODE: same_from_secret
+          WFS_MAC_SSH_STATUS: SKIPPED
+          WFS_MAC_VNC_STATUS: SKIPPED
+        run: |
+          set -euo pipefail
+          bash macos/workspace.sh status-smoke
+          echo 'PASS: same-process macOS status regression.' >> "$GITHUB_STEP_SUMMARY"
 
   native:
     name: "Native ${{ matrix.label }} GUI audit and authenticated localhost SSH"
