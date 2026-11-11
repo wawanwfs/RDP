@@ -175,14 +175,7 @@ PY
     warn "Console belongs to $console, not isolated remote user $user; Screen Sharing may require login or be unavailable."
   fi
 }
-setup() {
-  validate
-  test -s "$state/password" || die "Prepare step missing."
-  tailnet
-  create_account
-  local ip; ip="$(cat "$state/ip")"
-  if test "$WFS_REMOTE" = ssh || test "$WFS_REMOTE" = both; then ssh_server "$ip"; fi
-  if test "$WFS_REMOTE" = vnc || test "$WFS_REMOTE" = both; then screen_sharing; fi
+check_remote_ready() {
   # Stop immediately instead of charging hours for an unavailable endpoint.
   # In 'both' mode, SSH remains usable even when Apple Screen Sharing fails.
   case "$WFS_REMOTE" in
@@ -202,6 +195,41 @@ setup() {
       fi
       ;;
   esac
+}
+status_smoke() {
+  # Regression for GitHub Actions env propagation: GITHUB_ENV updates do
+  # not affect the current Bash process without save() also exporting values.
+  validate
+  local result_file="$RUNNER_TEMP/wfs-macos-status-smoke.env"
+  local prior_env="$GITHUB_ENV" prior_mode="$WFS_REMOTE"
+  export GITHUB_ENV="$result_file"
+  : > "$GITHUB_ENV"
+  export WFS_REMOTE=both
+  export WFS_MAC_SSH_STATUS=SKIPPED
+  export WFS_MAC_VNC_STATUS=SKIPPED
+  save WFS_MAC_SSH_STATUS TCP_READY_LOGIN_NOT_TESTED
+  save WFS_MAC_VNC_STATUS RFB_READY_GUI_CONTROL_UNVERIFIED
+  test "$WFS_MAC_SSH_STATUS" = TCP_READY_LOGIN_NOT_TESTED ||
+    die "Regression: status update didn't reach current Bash process"
+  test "$WFS_MAC_VNC_STATUS" = RFB_READY_GUI_CONTROL_UNVERIFIED ||
+    die "Regression: VNC status update didn't reach current Bash process"
+  grep -Fxq 'WFS_MAC_SSH_STATUS=TCP_READY_LOGIN_NOT_TESTED' "$GITHUB_ENV"
+  grep -Fxq 'WFS_MAC_VNC_STATUS=RFB_READY_GUI_CONTROL_UNVERIFIED' "$GITHUB_ENV"
+  check_remote_ready
+  say "PASS: same-process status and GITHUB_ENV updated; both-mode check succeeds."
+  export GITHUB_ENV="$prior_env" WFS_REMOTE="$prior_mode"
+  rm -f "$result_file"
+}
+setup() {
+  validate
+  test -s "$state/password" || die "Prepare step missing."
+  tailnet
+  create_account
+  local ip; ip="$(cat "$state/ip")"
+  if test "$WFS_REMOTE" = ssh || test "$WFS_REMOTE" = both; then ssh_server "$ip"; fi
+  if test "$WFS_REMOTE" = vnc || test "$WFS_REMOTE" = both; then screen_sharing; fi
+  check_remote_ready
+
 }
 local_smoke() {
   validate
@@ -290,7 +318,7 @@ cleanup() {
   say "Temporary state removed."
 }
 case "$1" in
-  validate) validate ;; prepare) prepare ;; setup) setup ;; local-smoke) local_smoke ;;
+  validate) validate ;; prepare) prepare ;; setup) setup ;; local-smoke) local_smoke ;; status-smoke) status_smoke ;;
   summary) summary ;; keepalive) keepalive ;; cleanup) cleanup ;;
   *) die "Usage: workspace.sh validate|prepare|setup|summary|keepalive|cleanup" ;;
 esac
