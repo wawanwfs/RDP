@@ -60,10 +60,14 @@ jobs:
           echo "PASS: Bash syntax validated."
 
   native:
-    name: "Apple-hosted macOS 15 — native GUI audit and private-loopback SSH login"
+    name: "Native ${{ matrix.label }} GUI audit and authenticated localhost SSH"
     needs: static
-    runs-on: macos-15
+    runs-on: ${{ matrix.label }}
     timeout-minutes: 9
+    strategy:
+      fail-fast: false
+      matrix:
+        label: [macos-15, macos-15-intel]
     steps:
       - uses: actions/checkout@v4
       - name: "🍎 Inspect native architecture, console and security capabilities"
