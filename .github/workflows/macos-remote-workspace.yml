@@ -19,6 +19,12 @@ on:
         type: string
         required: true
         default: wfsremote
+      gui_preview:
+        description: "Offer read-only browser preview via native screenshot on private Tailnet (VNC fallback)"
+        required: true
+        type: choice
+        default: "true"
+        options: ["true", "false"]
       remote_access:
         description: "SSH is testable; Apple VNC is experimental on hosted runners"
         required: true
@@ -106,6 +112,7 @@ jobs:
       WFS_REMOTE_SECRET: ${{ secrets.RDP_PASSWORD }}
       WFS_MAC_SSH_STATUS: SKIPPED
       WFS_MAC_VNC_STATUS: SKIPPED
+      WFS_MAC_PREVIEW_STATUS: SKIPPED
     steps:
       - name: "📦 Checkout WFS source"
         uses: actions/checkout@v4
@@ -151,6 +158,11 @@ jobs:
       - name: "🔐 Setup isolated tailnet SSH and/or best-effort Screen Sharing"
         timeout-minutes: 8
         run: bash macos/workspace.sh setup
+      - name: "🖥️ Start private screenshot GUI preview (separate from VNC)"
+        if: inputs.gui_preview == 'true'
+        timeout-minutes: 3
+        continue-on-error: true
+        run: bash macos/start-gui-preview.sh
       - name: "📦 Install and verify selected macOS tools (optional)"
         if: inputs.ide_choice != 'none' || inputs.coding_agent_choice != 'none' || inputs.apps_bundle != 'none' || inputs.trading_choice != 'none'
         timeout-minutes: 18
