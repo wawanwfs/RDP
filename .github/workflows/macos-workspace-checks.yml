@@ -190,6 +190,11 @@ jobs:
           bash macos/workspace.sh prepare
           bash macos/workspace.sh local-smoke
           echo "PASS: SSH daemon bound only to 127.0.0.1 and accepted the ephemeral runner account password." >> "$GITHUB_STEP_SUMMARY"
+      - name: "🖥️ Run GUI/Finder and private dark-pixel diagnostic on actual macOS"
+        timeout-minutes: 3
+        run: |
+          bash macos/diagnose-desktop-session.sh wfsremote
+          echo 'GUI session diagnostic completed (no screenshot retained or uploaded).' >> "$GITHUB_STEP_SUMMARY"
       - name: "🧹 Always clean up localhost SSH smoke"
         if: always()
         run: bash macos/workspace.sh cleanup
