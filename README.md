@@ -39,10 +39,10 @@ WFS Remote Workspaces menyediakan **tiga workflow utama** yang dikelola dalam sa
 | Host | GitHub Windows runner | Ubuntu runner + LinuxServer Webtop | **Genuine GitHub Apple macOS runner** |
 | Default desktop | Windows | Ubuntu KDE Plasma | macOS 15 / Apple Silicon |
 | Access method | **RDP** | **XRDP** | **SSH** + experimental Apple Screen Sharing |
-| Browser remote | noVNC option | Selkies Webtop option | No guaranteed browser GUI; native VNC is experimental |
+| Browser remote | noVNC option | Selkies Webtop option | **Private screenshot browser preview :6081 (READ-ONLY)**; interactive VNC still experimental |
 | User default | `RDP` | `RDP` | **`wfsremote`** (isolated non-admin user, independent of `runner`) |
 | Tailscale hostname | `rdp-runner` | `rdp-runner` | `rdp-runner` |
-| Primary remote port | TCP `3389` | TCP `3389` | SSH TCP `2222`; VNC TCP `5900` |
+| Primary remote port | TCP `3389` | TCP `3389` | SSH `2222`, VNC `5900`, optional private view `6081` |
 | Session choice | 1 / 3 / 6 h | 1 / 3 / 6 h | 1 / 3 / 6 h (default **1h** to limit macOS usage cost) |
 | Job cap | 360 min total | 360 min total | 360 min total |
 | Storage | Ephemeral | Ephemeral | Ephemeral |
@@ -109,11 +109,14 @@ Native Linux Webtop images do not require QEMU; Windows runs natively on its hos
 | **Remote mode** | `both` default, atau `ssh`/`vnc`; GUI **eksperimental** |
 | **SSH** | `ssh -p 2222 wfsremote@100.x.x.x` di PowerShell Windows, ganti IP/user dari Summary |
 | **VNC** | VNC Viewer dari Windows, atau `vnc://100.x.x.x` dari Mac; login/kendali grafis belum dijamin |
+| **New: browser view** | `gui_preview=true` (default); buka `http://100.x.x.x:6081/` dari Windows via Tailscale; autentikasi `wfsremote` + password remote; **READ-ONLY** |
 | **Apps** | Safari bawaan, opsional VS Code/Codex/Claude, toolchain dan WebTerminal browser |
 | **Sesi** | Default **1 jam**, opsi 3/6 jam; total job tetap maksimal 360 menit |
 | **Credentials** | Pakai kembali `TAILSCALE_AUTH_KEY` dan `RDP_PASSWORD`; password tidak dicetak |
 
 **Hasil CI macOS:** [3/3 berhasil pada Apple Silicon dan Intel](https://github.com/wawanwfs/RDP/actions/runs/42965871428): workflow, akun remote sementara, dan autentikasi SSH password melalui loopback. Koneksi dari PC Windows tetap perlu diuji di tailnet.
+
+**Perkembangan terbaru:** [CI macOS native](https://github.com/wawanwfs/RDP/actions/runs/43074456846) sudah membuktikan stream PNG asli dari macOS 1024×768 melalui HTTP privat dengan autentikasi serta penolakan mutasi. Preview ini membantu melihat isi layar meski VNC menampilkan hitam, tetapi **belum memberikan kontrol mouse/keyboard**. Selanjutnya perlu menguji screenshot wfsremote pada sesi VNC yang benar-benar sedang berjalan.
 
 **Batasan penting:** Apple mengendalikan izin Screen Sharing pada macOS modern. GitHub-hosted runner dapat menjalankan proses WindowServer tetapi belum tentu menerima koneksi desktop yang bisa dikendalikan dari VNC viewer. Workflow mencatat **status VNC berdasarkan header RFB**, menghentikan mode VNC-only jika layanan tidak ada, dan tidak menonaktifkan SIP, mengubah TCC, atau memaksa autentikasi VNC legacy yang lebih lemah.
 
