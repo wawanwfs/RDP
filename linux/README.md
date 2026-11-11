@@ -130,18 +130,20 @@ Workflow Linux menampilkan **Dashboard** pada tab **Summary** setiap run aktif d
 
 Mode `transport=auto` mencoba Tailscale HTTPS Serve `443` sebentar (**maksimal 12 detik**). Jika Serve tidak diaktifkan/diizinkan di tailnet, workflow **langsung menggunakan HTTPS Webtop pada IP Tailscale privat port `6082` tanpa Tailscale Serve**. Fallback menggunakan sertifikat Webtop self-signed sehingga browser mungkin menampilkan peringatan; pastikan IP sesuai Actions Summary. Native xrdp di mode `rdp`/`both` diteruskan pada **IP Tailscale port `3389`** secara privat. `tailnet_https` khusus untuk pengguna yang sudah mengaktifkan Serve + HTTPS Certificates/MagicDNS di tailnet.
 
-## 🌐 Google Chrome dan ekstensi wajib yang sama dengan Windows
+## 🌐 Chromium bawaan + Cookie-Editor dan GoFullPage
 
-**Chrome adalah komponen wajib**, tidak tergantung pilihan `apps_bundle`/IDE. Workflow Linux memasang Google Chrome resmi di Debian, Ubuntu, dan Fedora; di Arch atau Alpine menggunakan Chromium dari repositori distro karena paket Google Chrome native tidak tersedia di sana.
+**Browser tidak perlu dipasang ulang jika Chromium sudah tersedia.** Workflow sekarang mengecek `chromium` atau `chromium-browser` terlebih dahulu dan memakainya **tanpa menginstal Google Chrome tambahan**. Jika Chromium tidak tersedia tetapi Chrome sudah ada, workflow menggunakan Chrome tersebut. Google Chrome baru diinstal sebagai fallback pada Debian/Ubuntu/Fedora **hanya jika keduanya tidak tersedia**; pada Arch/Alpine fallback-nya Chromium native.
 
-Dua ekstensi yang sudah diwajibkan workflow Windows dipasang melalui kebijakan Chrome Enterprise untuk **seluruh akun lokal**:
+Contoh hasil CI: Kubuntu/LinuxServer Webtop menggunakan Chromium `156.0.8078.73` di `/usr/bin/chromium`, status `reused`, tanpa unduhan Chrome baru. **Pilihan ini berlaku baik untuk XRDP maupun desktop web**, sebab policy berbasis sistem.
+
+Dua ekstensi yang sama dengan workflow Windows dikonfigurasi melalui kebijakan **Chromium atau Chrome yang benar-benar dipilih** untuk seluruh akun lokal:
 
 | Ekstensi | Chrome Web Store ID | Fungsi |
 |:--|:--|:--|
 | **Cookie-Editor** | `hlkenndednhfkekhgcdicdfddnkalmdm` | Mengelola cookie browser |
 | **GoFullPage** | `fdpohaocaechififmbbbbbknoalclacl` | Screenshot halaman penuh |
 
-Instalasi Chrome dan file kebijakan `ExtensionInstallForcelist` diverifikasi saat setup. **Unduhan ekstensi dari Chrome Web Store berlangsung ketika profil Chrome pertama kali dijalankan dengan koneksi internet**; kebijakan tidak menjamin ekstensi terunduh sebelum Chrome dibuka. Untuk memeriksa, buka `chrome://policy` (klik Reload policies) dan `chrome://extensions`. Login akun Chrome/Google serta sinkronisasi ekstensi lain tidak dapat dipulihkan otomatis tanpa data profil dan otorisasi.
+Pemeriksaan setup memvalidasi browser terpilih dan JSON `ExtensionInstallForcelist`. Untuk Chromium, kebijakan disimpan di `/etc/chromium/policies/managed/` (juga `/etc/chromium-browser/policies/managed/` demi kompatibilitas); untuk Chrome fallback di `/etc/opt/chrome/policies/managed/`. **Unduhan CRX terjadi saat profil browser pertama dijalankan** dan memerlukan akses Chrome Web Store. Cek `chrome://policy` dan `chrome://extensions` di Chromium; policy terpasang tidak otomatis berarti ekstensi sudah muncul. Untuk memeriksa, buka `chrome://policy` (klik Reload policies) dan `chrome://extensions`. Login akun Chrome/Google serta sinkronisasi ekstensi lain tidak dapat dipulihkan otomatis tanpa data profil dan otorisasi.
 
 ## 🖥️ Perbaikan layar hitam xrdp
 
@@ -190,7 +192,7 @@ Pada menu `metatrader_choice`, pilih `mt4`, `mt5` atau `both`. Tahap tersendiri 
 
 1. Jalankan [Linux Workspace](https://github.com/wawanwfs/RDP/actions/workflows/linux-remote-workspace.yml) dengan `distro=ubuntu`, `desktop=kde`, `remote_access=rdp`, `metatrader_choice=mt5` (atau `both`).
 2. Buka tab **Summary → Per-Application Results**. Pastikan baris `MetaTrader 5` benar-benar bertuliskan **INSTALLED**. Jika `FAILED`, jangan anggap aplikasi tersedia.
-3. Login melalui XRDP pada alamat IP yang dicetak run. Untuk MT5, buka **MetaTrader 5 (WFS)**; untuk MT4 yang sudah `INSTALLED` buka **MetaTrader 4 (WFS)**. Jika status MT4 **`PENDING_INTERACTIVE`**, klik **Install MetaTrader 4 (WFS)** di desktop, selesaikan wizard Exness di Wine, dan buka terminal dari hasil instalasi. Instalasi manual ini tidak otomatis mengubah status Summary run yang sudah dibuat.
+3. Login melalui XRDP pada alamat IP yang dicetak run. Untuk MT5, buka **MetaTrader 5 (WFS)**; untuk MT4 yang sudah `INSTALLED` buka **MetaTrader 4 (WFS)**. Jika status MT4 **`PENDING_INTERACTIVE`**, klik **Install MetaTrader 4 (WFS)** di desktop dan selesaikan wizard Exness di Wine. Instalasi manual ini tidak otomatis mengubah status Summary run yang sudah dibuat.
 4. Setelah terminal terbuka, pilih server broker lalu login **secara manual**. Pasang EA setelah Anda memastikan platform bekerja dan menyimpan backup-nya. Tidak ada tindakan otomatis yang mengeksekusi order.
 5. Jika belum muncul, lihat **Install selected MetaTrader desktop terminals with Wine**, status `FAILED` atau `PENDING_INTERACTIVE`, dan log Wine. Aplikasi Wine tidak berjalan di Alpine lewat installer ini.
 
@@ -204,6 +206,21 @@ Referensi: [panduan MT5 Linux MetaQuotes](https://www.metatrader5.com/en/termina
 Pengujian [Windows CI](https://github.com/wawanwfs/RDP/actions/runs/42924327969) sudah membuktikan instalasi **MT4 native Windows (Exness)** dan **MT5 native Windows**, termasuk executable yang benar. Di Linux, [CI Wine MT5](https://github.com/wawanwfs/RDP/actions/runs/42844537445) lulus. Pengujian MT4 Linux awalnya gagal pada installer grafis yang tidak menyelesaikan `/auto` setelah timeout; fallback desktop `PENDING_INTERACTIVE` disediakan agar aplikasi tidak pernah dinyatakan terinstal tanpa bukti. Jalur interaktif harus tetap diuji dalam sesi XRDP pengguna.
 
 `PENDING_INTERACTIVE` **bukan** berarti `INSTALLED`. File setup yang disimpan di home desktop user berasal dari unduhan HTTPS Exness dengan pemeriksaan header PE dan SHA-256. Workflow Linux belum melakukan verifikasi sertifikat Authenticode setara Windows.
+
+### MT5 Linux: pesan `A debugger has been found running in your system`
+
+Pesan seperti pada screenshot KDE/RDP **tidak berarti Anda benar-benar menjalankan debugger**. Run sebelumnya menggunakan **Wine 10.0**, dan laporan komunitas terbaru menunjukkan build MT5 setelah Oktober 2026 dapat menampilkan *false positive* tersebut pada Wine 9 maupun 10. **Jangan menghapus data Wine prefix, mematikan proteksi keamanan OS, atau mengganti Wine sembarangan** berdasarkan pesan ini.
+
+Perubahan berikut dilakukan:
+
+1. Untuk **Linux**, installer MT5 beralih dari bootstrap MetaQuotes generik ke **installer Exness Windows yang ditautkan langsung dari situs resmi Exness** (`exness5setup.exe`) dengan Wine prefix tersendiri. Ini adalah percobaan kompatibilitas broker; bukan jaminan bahwa build MT5 yang baru bebas masalah anti-debug.
+2. CI menjalankan [`linux/test-metatrader-gui.sh`](test-metatrader-gui.sh), yaitu **peluncuran MT5 nyata pada Xvfb tanpa login broker**, dan mencari judul jendela **MetaTrader 5**, bukan sekadar proses `terminal64.exe`. Hasil GUI dilaporkan terpisah dari status installer: dialog error tidak dihitung sebagai terminal berfungsi.
+3. Sebagai fallback tanpa Wine, menu aplikasi menawarkan **MetaTrader WebTerminal (WFS fallback)** lewat Chromium di <https://web.metatrader.app/>. WebTerminal hanya mendukung fungsi trading berbasis browser dan **tidak menjalankan EA/script desktop**.
+4. Jika membutuhkan **MetaTrader desktop, MetaEditor, Expert Advisor, dan operasi stabil**, gunakan workflow **Windows RDP native** yang sudah membuktikan instalasi MT4/MT5 Windows. Uji login, chart, dan EA secara manual sebelum trading live.
+
+**Penting:** pembaruan repo baru berlaku untuk **run Actions baru** setelah commit ini. Sesi RDP yang sudah berjalan tidak otomatis mengganti installer, executable, atau policy browser di dalam containernya.
+
+Referensi isu: [laporan MT5 terbaru di MQL5](https://www.mql5.com/en/forum/518725) dan [diskusi Wine + build MT5](https://www.mql5.com/en/forum/10114/page38).
 
 ## ⏳ Keep Alive dan keamanan
 
