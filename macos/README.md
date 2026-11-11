@@ -236,16 +236,31 @@ A non-black screenshot **does not guarantee Finder or Dock is present**; it migh
 
 If the screenshot samples are nearly 100% black despite a live GUI session, or Finder exists but VNC remains black, the likely obstacle is an unavailable screen surface or **macOS Remote Management screen-capture permission**. On macOS 12.1+, `kickstart` alone does not guarantee interactive Screen Sharing. Using `launchctl` to start the service does not grant TCC capture permissions. For approved access, configure Screen Sharing via System Settings or device MDM on a genuine Apple host rather than hacking TCC databases. See [Screens black-display troubleshooting](https://help.edovia.com/en-GB/screens-5/troubleshooting/blank-screen) and [Apple Remote Management](https://support.apple.com/guide/remote-desktop/enable-remote-management-apd8b1c65bd/mac).
 
+### macOS 15/26 Screen Recording consent storm — fixed by manual capture
+
+A real macOS 15 ARM64 user session proved the screenshot viewer can display **Finder, Dock, and other GUI windows** while native VNC shows black. However, the old viewer polled `screencapture` every 1.8 seconds. On macOS Sequoia/Tahoe, this produced a **stack of repeated “sudo is requesting to bypass the system private window picker” permission dialogs**. This is a macOS privacy request, not a login prompt. Never auto-click Allow, reset TCC, edit screen-capture approvals databases, or suppress Apple consent dialogs.
+
+**Immediate remediation for a currently running old viewer:** from SSH run `lsof -nP -iTCP:6081 -sTCP:LISTEN` to identify the actual process PID, confirm it is the WFS `gui-preview.py` process, and `kill PID` (replace PID with its real number). Stopping the viewer leaves SSH and VNC intact. The on-screen alerts may still need authorized GUI dismissal; stopping capture prevents new alerts.
+
+**New safe default (after restarting viewer with updated code):**
+
+- The browser now loads in **PAUSED** mode, with a **Capture one frame** button. It no longer polls `screencapture` automatically.
+- Server-side rate limit: at most **one new legacy screenshot per 60 seconds**, even if clients request frames rapidly.
+- We are also developing a long-lived native **ScreenCaptureKit** helper ([source](ScreenCaptureWorker.swift), [build](build-screen-capture-worker.sh)) which requires Apple's explicit Screen Recording consent and does **not** bypass TCC. A successful compilation is not proof of permission or continuous remote GUI access; the native worker is not enabled by default.
+- **Your existing workflow/SSH viewer process does not hot-reload the code from GitHub.** Stop its listener, then download/start the updated launcher from `main` or start a **new** workflow run. On the new page you should see the **Capture one frame** button, not an automatically updating feed.
+
+**Security and functionality note:** The new fallback is intentionally **manual, read-only** until an approved persistent capture is verified. The screenshot may still prompt once for authorization when you click Capture. This is preferable to generating continuous permission dialogs. Screen content may include sensitive notifications; keep port `6081` inside Tailscale.
+
 ### New: private web-based desktop preview when Apple VNC stays black
 
-**Option A remains a genuine GitHub-hosted macOS runner, with no additional Mac rental.** If macOS accepts SSH and VNC RFB authentication but TigerVNC still shows a black framebuffer, WFS now offers an **independent screenshot-based viewer** implemented in [`macos/gui-preview.py`](gui-preview.py). This is not a new VNC server: it runs `screencapture` **as the isolated `wfsremote` user**, sends PNG frames through a private HTTP service, and displays them in an auto-refreshing Windows browser.
+**Option A remains a genuine GitHub-hosted macOS runner, with no additional Mac rental.** If macOS accepts SSH and VNC RFB authentication but TigerVNC still shows a black framebuffer, WFS now offers an **independent screenshot-based viewer** implemented in [`macos/gui-preview.py`](gui-preview.py). This is not a new VNC server: it runs `screencapture` **as the isolated `wfsremote` user**, sends PNG frames through a private HTTP service, and displays them in a password-protected Windows browser (manual capture by default to avoid repeat permission prompts).
 
 New [macOS workflow](../.github/workflows/macos-remote-workspace.yml) input: `gui_preview=true` (default). It starts [`macos/start-gui-preview.sh`](start-gui-preview.sh) after remote account, Tailscale and SSH setup. If started, the Summary displays a screenshot-preview status. To connect:
 
 1. Connect your Windows device to the same Tailscale tailnet.
 2. Open `http://100.x.x.x:6081/` in your browser, using the **Private Tailscale IP for the NEW workflow run**.
 3. When prompted, use username `wfsremote` (or your chosen remote username) and the remote-account password stored in the `RDP_PASSWORD` secret for `same_from_secret` mode.
-4. Wait for a frame. The page reports screenshot failures rather than pretending a black VNC canvas is usable. Test the displayed screenshot against macOS's on-host display capture.
+4. Click **Capture one frame** after reviewing macOS permissions. The page reports screenshot failures rather than pretending a black VNC canvas is usable. Test the displayed screenshot against macOS's on-host display capture.
 
 **Security:** The listener binds *only* to an address inside Tailscale's IPv4 `100.64.0.0/10` network; never to `0.0.0.0` or the public NIC. HTTP Basic authentication uses the existing 12+-character remote password, protected in transit by **Tailscale's encrypted peer-to-peer transport**. Credentials are not placed in URLs or logs. PNG frames are created in a private temporary file, read, then removed; the server does not archive or upload them. Don't expose port 6081 with Funnel, public port forwarding, or an unencrypted Internet proxy.
 
