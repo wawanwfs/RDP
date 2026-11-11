@@ -66,6 +66,13 @@ jobs:
           assert 'sudo "$kick" -configure -users "$user" -access -on -privs -all' in script
           assert "dsAttrTypeNative:naprivs" in script
           assert "WFS_MAC_ARD_STATUS" in script
+          diagnose = pathlib.Path("macos/diagnose-vnc.sh").read_text(encoding="utf-8")
+          assert 'dsAttrTypeNative:naprivs' in diagnose
+          assert 'dsmemberutil checkmembership' in diagnose
+          assert 'RFB 003.008' in diagnose
+          assert "Classic VNC password type 2:" in diagnose
+          assert "kickstart -activate" not in diagnose
+          assert "tccutil" not in diagnose
           assert "bash macos/workspace.sh" in workflow
           assert "bash macos/install-apps.sh" in workflow
           for forbidden in ("TCC.db","sqlite3","DisableRealtimeMonitoring","vnc password printed","0.0.0.0:5900"):
@@ -77,6 +84,7 @@ jobs:
           print("PASS: native macOS selection, safe remote defaults and no TCC/SIP bypass")
           PY
           bash -n macos/workspace.sh
+          bash -n macos/diagnose-vnc.sh
           bash -n macos/install-apps.sh
           bash -n macos/tailscale-dns-guard.sh
           echo "PASS: Bash syntax validated."
