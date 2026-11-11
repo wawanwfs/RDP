@@ -175,6 +175,22 @@ A real external SSH + VNC test showed `RFB 003.889` and security types `[30, 33,
 
 **Mac limitation:** Apple states that on macOS 12.1+ full Screen Sharing cannot be enabled through `kickstart`; Remote Management enabled by command line can be restricted to view-only. On GitHub-hosted machines without an authorized GUI/MDM configuration, fully controllable desktop access is **not guaranteed** even if SSH works, the RFB banner is present, and a user permission attribute exists. See [Apple official Remote Management guidance](https://support.apple.com/en-bw/guide/remote-desktop/apd8b1c65bd/mac). To operate macOS GUI reliably, use a managed Apple Mac with Screen Sharing enabled via System Settings or appropriate MDM.
 
+### SSH works but VNC authentication fails — use the read-only diagnostic
+
+If SSH as `wfsremote` works but RealVNC or 1Remote reports **authentication failed**, don't change the working SSH password or open port 5900 on the public internet. SSH and Apple Remote Management use different access rules. The user reported protocol `RFB 003.889`, server security methods `[30,33,36,35]`, and console owner `runner`; classic VNC method 2 was not advertised. A client that supports only legacy VNC password mode cannot authenticate.
+
+**From the currently active macOS SSH session**, download and inspect the repository's [read-only diagnostic](diagnose-vnc.sh), then run it:
+
+```bash
+curl -fsSLo /tmp/wfs-diagnose-vnc.sh https://raw.githubusercontent.com/wawanwfs/RDP/main/macos/diagnose-vnc.sh
+less /tmp/wfs-diagnose-vnc.sh
+bash /tmp/wfs-diagnose-vnc.sh wfsremote
+```
+
+It displays the real console owner, ARD `naprivs` attribute, `com.apple.access_screensharing`/SSH group membership, available RFB security methods and Screen Sharing service status. It **never changes permissions, requests a password, or authenticates to VNC**. You can send its output back without sharing any password, SSH key, token or account secret.
+
+Try [TigerVNC Viewer](https://github.com/TigerVNC/tigervnc/releases) from Windows against the current **Tailscale IP** and `::5900` using Apple-compatible username/password mode, not a legacy type-2-only profile. If VNC still refuses access even with an ARD grant, note the Apple-supported limitation: on macOS 12.1+ the `kickstart` command does not enable fully interactive Screen Sharing. Genuine screen control may require authorized configuration through **System Settings** or MDM on a manageable Mac. Do not disable SIP/TCC or enable weaker 8-character legacy VNC passwords as a workaround. See [Apple Remote Desktop guidance](https://support.apple.com/en-bw/guide/remote-desktop/apd8b1c65bd/mac).
+
 ## 8. Troubleshooting and acceptance gates
 
 | Symptom | Diagnose |
