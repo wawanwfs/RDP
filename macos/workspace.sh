@@ -6,7 +6,16 @@ state="$RUNNER_TEMP/wfs-macos"
 say() { printf '[WFS macOS] %s\n' "$*"; }
 warn() { printf '::warning title=WFS macOS::%s\n' "$*"; }
 die() { printf '::error title=WFS macOS::%s\n' "$*" >&2; exit 1; }
-save() { printf '%s=%s\n' "$1" "$2" >> "$GITHUB_ENV"; }
+save() {
+  # GITHUB_ENV is consumed only by *subsequent* GitHub Actions steps.
+  # Immediately update the current shell too, otherwise setup() still sees
+  # WFS_MAC_SSH_STATUS=SKIPPED after ssh_server() successfully starts.
+  local key="$1" value="$2"
+  [[ "$key" =~ ^WFS_MAC_[A-Z0-9_]+$ ]] || die "Invalid internal status key."
+  printf '%s=%s\n' "$key" "$value" >> "$GITHUB_ENV"
+  printf -v "$key" '%s' "$value"
+  export "$key"
+}
 validate() {
   test "$(uname -s)" = Darwin || die "Requires authentic macOS runner."
   test "$GITHUB_ACTIONS" = true || die "GitHub Actions only."
