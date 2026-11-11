@@ -38,6 +38,7 @@ jobs:
           options=parsed["on"]["workflow_dispatch"]["inputs"]
           assert options["runner_label"]["default"] == "macos-15"
           assert set(options["runner_label"]["options"]) == {"macos-15","macos-26","macos-15-intel","macos-26-intel"}
+          assert options["remote_username"]["default"] == "wfsremote"
           assert options["remote_access"]["default"] == "both"
           assert options["duration_hours"]["default"] == "1"
           assert parsed["jobs"]["macos-workspace"]["timeout-minutes"] == "360"
@@ -68,6 +69,7 @@ jobs:
       - name: "🍎 Inspect native architecture, console and security capabilities"
         shell: bash
         env:
+          WFS_MAC_USER: wfsremote
           WFS_REMOTE: both
           WFS_DURATION: "1"
           WFS_HOSTNAME_BASE: rdp-runner
@@ -108,6 +110,7 @@ jobs:
           echo "PASS: genuine macOS runner; GUI feasibility is recorded without false success."
       - name: "🔐 Exercise production SSH config with real macOS password authentication on localhost"
         env:
+          WFS_MAC_USER: wfsremote
           WFS_REMOTE: ssh
           WFS_DURATION: "1"
           WFS_HOSTNAME_BASE: rdp-runner
