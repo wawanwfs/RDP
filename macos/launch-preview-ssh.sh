@@ -31,6 +31,10 @@ if test -z "$ip"; then
   exit 3
 fi
 mkdir -p "$profile"; chmod 700 "$profile"
+if test -f "$0"; then
+  cp "$0" "$profile/launch-preview-ssh.sh"
+  chmod 700 "$profile/launch-preview-ssh.sh"
+fi
 if nc -G 2 -z "$ip" 6081 >/dev/null 2>&1; then
   echo "[WFS Preview] Existing viewer detected on $ip:6081; use its configured login."
   exit 0
