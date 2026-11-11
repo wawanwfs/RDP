@@ -8,9 +8,9 @@
 |:--|:--|:--|:--|
 | Windows | [Windows Remote Workspace](../.github/workflows/windows-remote-workspace-with-apps.yml) | `windows-2025` | Native `rdp`, user `RDP` |
 | Linux | [Linux Remote Workspace](../.github/workflows/linux-remote-workspace.yml) | `ubuntu` + `kde` | Native `xrdp`, user `RDP` |
-| macOS | [macOS Remote Workspace](../.github/workflows/MacOS.yml) | `macos-15` Apple Silicon | Tailscale SSH `:2222`, Apple VNC `:5900` experimental, user `runner` (verify Summary) |
+| macOS | [macOS Remote Workspace](../.github/workflows/MacOS.yml) | `macos-15` Apple Silicon | Tailscale SSH `:2222`, Apple VNC `:5900` experimental, user `wfsremote` (verify Summary) |
 
-Both use Tailscale (private tailnet only), `rdp-runner` as default hostname, 1/3/6-hour selected sessions, and GitHub's **360-minute total job cap**. A selected six-hour session can have less than six hours remaining after setup.
+All three use Tailscale (private tailnet only), `rdp-runner` as default hostname, 1/3/6-hour selected sessions, and GitHub's **360-minute total job cap**. A selected six-hour session can have less than six hours remaining after setup.
 
 ## 2. Tested GitHub Actions evidence
 
@@ -39,12 +39,13 @@ Both use Tailscale (private tailnet only), `rdp-runner` as default hostname, 1/3
 | Native macOS runner | [macOS CI run](https://github.com/wawanwfs/RDP/actions/runs/42964659962) | Real macOS 15.8.2 ARM64, user `runner`, WindowServer present, sudo/ARD utility and screenshot capability observed |
 | Workflow safety | [macOS native CI](../.github/workflows/macos-workspace-checks.yml) | YAML/Bash parse and security controls; no TCC/SIP manipulation or publicly bound SSH |
 | Tailnet SSH listener | Must be checked after [macOS workflow run](../.github/workflows/MacOS.yml) | `ListenAddress` private 100.x.x.x, TCP :2222 responds, restricted user |
-| Remote SSH authentication | Client-side acceptance **not yet performed** | Authorized client from second Tailscale node logs in using real macOS username and approved password |
+| Local SSH authentication | [macOS ARM64+Intel CI](https://github.com/wawanwfs/RDP/actions/runs/42965871428) | Dedicated user `wfsremote` created, macOS Directory Services password verified, real OpenSSH login accepted via loopback on both CPU architectures |
+| External SSH authentication | Client-side acceptance **not yet performed** | Authorized Windows device on Tailscale logs in to 100.x.x.x:2222 as `wfsremote` |
 | Screen Sharing listener | Best-effort GitHub-hosted macOS | TCP :5900 may open; `PORT_OPEN_GUI_CONTROL_UNVERIFIED` is **not** acceptance |
 | Actual GUI control | Client-side acceptance **not yet performed** | VNC viewer reaches Finder, mouse/keyboard works, no black screen and no view-only restriction |
 | Hackintosh | Not provided | No unsupported x86 PC macOS installation or non-Apple VM |
 
-**User acceptance for macOS:** launch `macos-15`, `remote_access=both`, `duration_hours=1` with existing `TAILSCALE_AUTH_KEY` and `RDP_PASSWORD`. Compare Actions Summary to actual Windows PowerShell `ssh -p 2222 runner@100.x.x.x` and a **separate** VNC client test on :5900. Never use `mstsc` to connect to a VNC port. Use `macos/README.md` for detailed troubleshooting. Screen Sharing on recent macOS versions cannot be guaranteed full control via CLI configuration alone.
+**User acceptance for macOS:** launch `macos-15`, `remote_access=both`, `duration_hours=1` with existing `TAILSCALE_AUTH_KEY` and `RDP_PASSWORD`. Compare Actions Summary to actual Windows PowerShell `ssh -p 2222 wfsremote@100.x.x.x` and a **separate** VNC client test on :5900. Never use `mstsc` to connect to a VNC port. Use `macos/README.md` for detailed troubleshooting. Screen Sharing on recent macOS versions cannot be guaranteed full control via CLI configuration alone.
 
 ## 3. Windows acceptance checklist
 
