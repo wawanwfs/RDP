@@ -314,6 +314,7 @@ summary() {
     echo "| Login password | Existing GitHub secret RDP_PASSWORD; mode $WFS_PASSWORD_MODE (never printed) |"
     echo "| SSH :2222 | $WFS_MAC_SSH_STATUS |"
     echo "| Apple Screen Sharing :5900 | $WFS_MAC_VNC_STATUS (RFB listener only; GUI not confirmed) |"
+    echo "| Private screenshot preview :6081 | $WFS_MAC_PREVIEW_STATUS (read-only; no remote mouse/keyboard) |"
     echo "| Remote Management user grant | ${WFS_MAC_ARD_STATUS:-NOT_CHECKED} (permission ≠ successful VNC login) |"
     echo "| Console session user | $(stat -f %Su /dev/console 2>/dev/null || echo unavailable) (may differ from VNC login user) |"
     echo "| Session duration | Selected $WFS_DURATION hour(s), total GitHub job cap 360 min including setup |"
@@ -321,6 +322,8 @@ summary() {
     echo "**Windows PowerShell (SSH):** \`ssh -p 2222 $user@$ip\` (if SSH is listening)."
     echo
     echo "**Screen Sharing (VNC):** connect to \`$ip:5900\` from a VNC viewer on the same tailnet; use macOS username \`$user\` and login password, if Apple's server accepts the authentication mechanism."
+    echo
+    echo "**Optional browser preview:** open http://$ip:6081/ from a Windows browser joined to the same Tailscale network. Username: $user; password: existing remote login secret. Screenshot-only and READ-ONLY."
     echo
     echo "> [!WARNING]"
     echo "> Screen Sharing listener does **not** prove interactive GUI. On GitHub-hosted macOS, graphical login may be absent and Apple limits command-line enablement to view-only. Do not use mstsc/RDP; this is macOS VNC/SSH. For reliable fully interactive GUI use an approved Apple-backed self-hosted or managed Mac."
@@ -347,6 +350,19 @@ keepalive() {
   done
 }
 cleanup() {
+  if test -s "$state/gui-preview.pid"; then
+    preview_pid="$(cat "$state/gui-preview.pid" 2>/dev/null || true)"
+    if [[ "$preview_pid" =~ ^[0-9]+$ ]]; then
+      sudo kill "$preview_pid" >/dev/null 2>&1 || true
+    fi
+  fi
+  if [[ "$WFS_MAC_USER" =~ ^[a-z][a-z0-9_-]{1,20}$ ]]; then
+    preview_home="$(dscl . -read "/Users/$WFS_MAC_USER" NFSHomeDirectory 2>/dev/null | awk '{print $2}' || true)"
+    if test -n "$preview_home" && test -f "$preview_home/.wfs-preview/login-secret"; then
+      sudo rm -f "$preview_home/.wfs-preview/login-secret" || true
+      sudo rmdir "$preview_home/.wfs-preview" >/dev/null 2>&1 || true
+    fi
+  fi
   if test -s "$state/sshd.pid"; then
     pid="$(sudo cat "$state/sshd.pid" 2>/dev/null || true)"
     if [[ "$pid" =~ ^[0-9]+$ ]]; then sudo kill "$pid" >/dev/null 2>&1 || true; fi
