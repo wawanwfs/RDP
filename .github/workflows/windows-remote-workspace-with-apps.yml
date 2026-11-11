@@ -1,7 +1,7 @@
 # 🎯 Log markers: 🚀 start | ⏭️ SKIP | 📥 download | ⚙️ install
 # ✅ success | ⚠️ warning | ❌ error | ⏱️ TIME | 🛡️ admin | 🎨 ArtCraft Launcher
 # Text labels remain searchable; machine-readable paths, IDs and secrets are unchanged.
-name: "🪟 Windows Remote Workspace with Apps"
+name: "🪟 Windows Remote Workspace"
 run-name: "🚀 Windows Workspace • ${{ inputs.remote_access }} • ${{ inputs.windows_version }}"
 
 "on":
