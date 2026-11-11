@@ -74,7 +74,7 @@ then
   done
   exit 1
 fi
-say "Downloading official Exness-hosted MetaTrader installers into isolated Wine prefixes."
+say "Downloading official Exness MT4 and MetaQuotes MT5 installers into isolated Wine prefixes."
 failed=0
 for app in mt4 mt5; do
   if [ "$choice" != "$app" ] && [ "$choice" != both ]; then continue; fi
@@ -100,10 +100,10 @@ if [ "$app" = mt4 ]; then
   # This source is the Windows MT4 executable linked by Exness official Help Center.
   url="https://download.terminal.free/cdn/web/exness.technologies.ltd/mt4/exness4setup.exe"
 else
-  # Exness publishes this MT5 installer on the same official CDN linked from
-  # exness.com/metatrader-5; broker builds can differ from generic MetaQuotes.
-  # Newer MT5 builds may STILL trigger Wine anti-debug false positives.
-  url="https://download.terminal.free/cdn/web/exness.technologies.ltd/mt5/exness5setup.exe"
+  # MetaQuotes installer has been proven to finish under Wine on this image.
+  # The Exness broker installer was also tested but its /auto mode stalled.
+  # Installing a binary DOES NOT establish MT5 Wine GUI runtime compatibility.
+  url="https://download.mql5.com/cdn/web/metaquotes.software.corp/mt5/mt5setup.exe"
 fi
 installer="$install_dir/${app}setup.exe"
 curl --fail --location --silent --show-error --retry 3 --retry-all-errors \
