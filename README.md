@@ -40,7 +40,7 @@ WFS Remote Workspaces menyediakan **tiga workflow utama** yang dikelola dalam sa
 | Default desktop | Windows | Ubuntu KDE Plasma | macOS 15 / Apple Silicon |
 | Access method | **RDP** | **XRDP** | **SSH** + experimental Apple Screen Sharing |
 | Browser remote | noVNC option | Selkies Webtop option | No guaranteed browser GUI; native VNC is experimental |
-| User default | `RDP` | `RDP` | Actual macOS runner account (typically `runner`) |
+| User default | `RDP` | `RDP` | **`wfsremote`** (isolated non-admin user, independent of `runner`) |
 | Tailscale hostname | `rdp-runner` | `rdp-runner` | `rdp-runner` |
 | Primary remote port | TCP `3389` | TCP `3389` | SSH TCP `2222`; VNC TCP `5900` |
 | Session choice | 1 / 3 / 6 h | 1 / 3 / 6 h | 1 / 3 / 6 h (default **1h** to limit macOS usage cost) |
@@ -92,7 +92,7 @@ Native Linux Webtop images do not require QEMU; Windows runs natively on its hos
 |:--|:--|:--|
 | `TAILSCALE_AUTH_KEY` | Menghubungkan runner ke tailnet privat | Dipakai ketiga workflow |
 | `RDP_PASSWORD` | Password Windows RDP, Linux XRDP, **dan macOS SSH/VNC user** | macOS mensyaratkan minimal 12 byte; secret dipakai ulang meski protokol bukan RDP |
-| `VNC_PASSWORD` | Password remote browser/noVNC Windows/Linux | macOS memakai login akun macOS dari `RDP_PASSWORD`, bukan VNC legacy password |
+| `VNC_PASSWORD` | Password remote browser/noVNC Windows/Linux | macOS membuat akun `wfsremote` dengan login dari `RDP_PASSWORD`; VNC legacy password tidak diaktifkan |
 
 **Default akun Windows dan Linux adalah `RDP` kapital.** Linux membedakan `RDP` dan `rdp` sebagai dua akun berbeda. Password tidak diambil dari username, dan nilai secret tidak boleh ditempel di issue, log publik atau screenshot.
 
@@ -100,18 +100,20 @@ Native Linux Webtop images do not require QEMU; Windows runs natively on its hos
 
 ## 🍎 macOS Workspace — Genuine Apple Silicon / Intel
 
-**Default baru: macOS 15 + private Tailscale + SSH dan percobaan Screen Sharing (VNC)**. Pilih macOS 26 jika membutuhkan toolchain lebih baru, atau varian Intel jika aplikasi Anda membutuhkan x64. macOS tidak memakai server Microsoft RDP; jangan memakai `mstsc` untuk mengakses port 5900.
+**Default baru: macOS 15 + akun `wfsremote` + private Tailscale + SSH dan percobaan Screen Sharing (VNC)**. Pilih macOS 26 jika membutuhkan toolchain lebih baru, atau varian Intel jika aplikasi Anda membutuhkan x64. macOS tidak memakai server Microsoft RDP; jangan memakai `mstsc` untuk mengakses port 5900.
 
 | Item | Detail |
 |:--|:--|
 | **Launch** | [WFS macOS Remote Workspace](https://github.com/wawanwfs/RDP/actions/workflows/MacOS.yml) |
 | **Runners** | `macos-15`, `macos-26`, `macos-15-intel`, `macos-26-intel` |
 | **Remote mode** | `both` default, atau `ssh`/`vnc`; GUI **eksperimental** |
-| **SSH** | `ssh -p 2222 runner@100.x.x.x` di PowerShell Windows, ganti IP/user dari Summary |
+| **SSH** | `ssh -p 2222 wfsremote@100.x.x.x` di PowerShell Windows, ganti IP/user dari Summary |
 | **VNC** | VNC Viewer dari Windows, atau `vnc://100.x.x.x` dari Mac; login/kendali grafis belum dijamin |
 | **Apps** | Safari bawaan, opsional VS Code/Codex/Claude, toolchain dan WebTerminal browser |
 | **Sesi** | Default **1 jam**, opsi 3/6 jam; total job tetap maksimal 360 menit |
 | **Credentials** | Pakai kembali `TAILSCALE_AUTH_KEY` dan `RDP_PASSWORD`; password tidak dicetak |
+
+**Hasil CI macOS:** [3/3 berhasil pada Apple Silicon dan Intel](https://github.com/wawanwfs/RDP/actions/runs/42965871428): workflow, akun remote sementara, dan autentikasi SSH password melalui loopback. Koneksi dari PC Windows tetap perlu diuji di tailnet.
 
 **Batasan penting:** Apple mengendalikan izin Screen Sharing pada macOS modern. GitHub-hosted runner dapat menjalankan proses WindowServer tetapi belum tentu menerima koneksi desktop yang bisa dikendalikan dari VNC viewer. Workflow mencatat **status VNC sebenarnya** dan tidak menonaktifkan SIP, mengubah TCC, atau memaksa autentikasi VNC legacy yang lebih lemah.
 
