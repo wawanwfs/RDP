@@ -14,6 +14,12 @@ on:
       - ".github/workflows/linux-workspace-checks.yml"
   workflow_dispatch:
 
+# Cancel superseded CI runs on the same ref so they do not create dozens
+# of competing image pulls from the LinuxServer registry.
+concurrency:
+  group: linux-workspace-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
