@@ -66,6 +66,14 @@ create_account() {
     die "Cannot create isolated WFS macOS remote account."
   fi
   id "$user" >/dev/null 2>&1 || die "macOS account creation returned success but user was not found."
+  # macOS may restrict Remote Login through this local access group.
+  sudo dseditgroup -o edit -a "$user" -t user com.apple.access_ssh >/dev/null 2>&1 ||
+    warn "Cannot add temporary user to Remote Login access group."
+  if dscl . -authonly "$user" "$p" >/dev/null 2>&1; then
+    say "Local Directory Services password authentication verified for $user."
+  else
+    warn "New macOS account password not authenticated by Directory Services; SSH login may be rejected."
+  fi
   touch "$state/account-created"
   say "Created separate non-admin macOS account $user, without changing runner password."
 }
