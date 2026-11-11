@@ -134,6 +134,33 @@ setup() {
   if test "$WFS_REMOTE" = ssh || test "$WFS_REMOTE" = both; then ssh_server "$ip"; fi
   if test "$WFS_REMOTE" = vnc || test "$WFS_REMOTE" = both; then screen_sharing; fi
 }
+local_smoke() {
+  validate
+  test -s "$state/password" || die "Prepare synthetic CI credentials first."
+  test "$WFS_REMOTE" = ssh || die "Local SSH smoke must use remote_access=ssh."
+  # Never join Tailscale or open an externally reachable socket in this test.
+  password
+  ssh_server 127.0.0.1
+  test "$(nc -G 2 -z 127.0.0.1 2222 >/dev/null 2>&1; echo $?)" = 0 ||
+    die "Localhost SSH listener failed."
+  local askpass="$state/ssh-askpass" known="$state/known_hosts" user="$(id -un)"
+  cat > "$askpass" <<ASKPASS
+#!/bin/sh
+cat "$state/password"
+ASKPASS
+  chmod 700 "$askpass"
+  # SSH_ASKPASS_REQUIRE=force lets OpenSSH authenticate non-interactively
+  # without printing a password or requiring an interactive GitHub job TTY.
+  local identity
+  identity="$(SSH_ASKPASS="$askpass" SSH_ASKPASS_REQUIRE=force DISPLAY=:0 \
+    ssh -o ConnectionAttempts=1 -o ConnectTimeout=10 \
+      -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$known" \
+      -o PreferredAuthentications=password -o PubkeyAuthentication=no \
+      -o BatchMode=no -p 2222 "$user@127.0.0.1" 'id -un' </dev/null)" ||
+    die "SSH password authentication smoke failed."
+  test "$identity" = "$user" || die "SSH authenticated as unexpected user."
+  say "PASS: macOS local SSH authenticated using temporary password, 127.0.0.1:2222."
+}
 summary() {
   local ip user
   ip="$(cat "$state/ip")"; user="$(id -un)"
@@ -185,7 +212,7 @@ cleanup() {
   say "Temporary state removed."
 }
 case "$1" in
-  validate) validate ;; prepare) prepare ;; setup) setup ;;
+  validate) validate ;; prepare) prepare ;; setup) setup ;; local-smoke) local_smoke ;;
   summary) summary ;; keepalive) keepalive ;; cleanup) cleanup ;;
   *) die "Usage: workspace.sh validate|prepare|setup|summary|keepalive|cleanup" ;;
 esac
