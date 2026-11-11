@@ -16,6 +16,8 @@ validate() {
   case "$WFS_PASSWORD_MODE" in same_from_secret|random_each_run) ;; *) die "Invalid password mode";; esac
   case "$WFS_HOSTNAME_MODE" in same_each_run|unique_each_run) ;; *) die "Invalid hostname mode";; esac
   [[ "$WFS_HOSTNAME_BASE" =~ ^[a-z][a-z0-9-]{0,38}$ ]] || die "Invalid hostname."
+  [[ "$WFS_MAC_USER" =~ ^[a-z][a-z0-9_-]{1,20}$ ]] || die "Invalid remote macOS username."
+  case "$WFS_MAC_USER" in runner|root|daemon|nobody|admin) die "Reserved macOS username";; esac
 }
 prepare() {
   validate
@@ -35,8 +37,8 @@ PY
   local hostname="$WFS_HOSTNAME_BASE"
   if test "$WFS_HOSTNAME_MODE" = unique_each_run; then hostname="$hostname-$GITHUB_RUN_ID"; fi
   save WFS_MAC_HOSTNAME "$hostname"
-  save WFS_MAC_USER "$(id -un)"
-  say "macOS $(sw_vers -productVersion) / $(uname -m); user=$(id -un); tailnet name=$hostname."
+  save WFS_MAC_USER "$WFS_MAC_USER"
+  say "macOS $(sw_vers -productVersion) / $(uname -m); remote user=$WFS_MAC_USER; runner user=$(id -un); tailnet name=$hostname."
 }
 tailnet() {
   command -v tailscale >/dev/null 2>&1 || die "Tailscale GitHub Action did not install CLI."
@@ -47,15 +49,28 @@ tailnet() {
   save WFS_MAC_IP "$ip"
   say "Private Tailscale IP $ip"
 }
-password() {
-  local p
+create_account() {
+  local p user="$WFS_MAC_USER"
   p="$(cat "$state/password")"
-  sudo dscl . -passwd "/Users/$(id -un)" "$p" >/dev/null ||
-    die "Could not set temporary password on ephemeral runner account."
-  say "Ephemeral macOS login password configured (never logged)."
+  if id "$user" >/dev/null 2>&1; then
+    test -f "$state/account-created" || die "Refusing to modify a pre-existing macOS account."
+    say "Ephemeral $user account already created for this workflow."
+    return
+  fi
+  # A GitHub-hosted macOS runner may reject resetting the password of its
+  # pre-existing SecureToken-protected 'runner' account. Create a separate,
+  # standard, non-admin account instead; do not bypass SecureToken or TCC.
+  if ! sudo sysadminctl -addUser "$user" -fullName "WFS Remote Workspace" -password "$p" > "$state/account.log" 2>&1; then
+    warn "macOS rejected standard temporary-account creation; see sanitized diagnostics."
+    tail -n 12 "$state/account.log" | sed -E 's/[Pp]assword=[^ ]+/password=[REDACTED]/g' || true
+    die "Cannot create isolated WFS macOS remote account."
+  fi
+  id "$user" >/dev/null 2>&1 || die "macOS account creation returned success but user was not found."
+  touch "$state/account-created"
+  say "Created separate non-admin macOS account $user, without changing runner password."
 }
 ssh_server() {
-  local ip="$1" user="$(id -un)" conf="$state/sshd_config"
+  local ip="$1" user="$WFS_MAC_USER" conf="$state/sshd_config"
   if ! ifconfig | grep -Fq "inet $ip "; then
     warn "Tailscale IP is not on a macOS interface. Skipping SSH rather than binding public."
     save WFS_MAC_SSH_STATUS NO_TAILNET_INTERFACE
@@ -98,7 +113,7 @@ CONF
 }
 screen_sharing() {
   local kick="/System/Library/CoreServices/RemoteManagement/ARDAgent.app/Contents/Resources/kickstart"
-  local user="$(id -un)"
+  local user="$WFS_MAC_USER"
   local console="$(stat -f %Su /dev/console 2>/dev/null || true)"
   say "Console user=$console. Attempting supported Screen Sharing services."
   if test -x "$kick"; then
@@ -122,14 +137,14 @@ screen_sharing() {
     warn "Screen Sharing did not open port 5900 on hosted runner."
   fi
   if test "$console" != "$user"; then
-    warn "Active console is not the runner user; VNC may show login window or black screen."
+    warn "Console belongs to $console, not isolated remote user $user; Screen Sharing may require login or be unavailable."
   fi
 }
 setup() {
   validate
   test -s "$state/password" || die "Prepare step missing."
   tailnet
-  password
+  create_account
   local ip; ip="$(cat "$state/ip")"
   if test "$WFS_REMOTE" = ssh || test "$WFS_REMOTE" = both; then ssh_server "$ip"; fi
   if test "$WFS_REMOTE" = vnc || test "$WFS_REMOTE" = both; then screen_sharing; fi
@@ -139,11 +154,11 @@ local_smoke() {
   test -s "$state/password" || die "Prepare synthetic CI credentials first."
   test "$WFS_REMOTE" = ssh || die "Local SSH smoke must use remote_access=ssh."
   # Never join Tailscale or open an externally reachable socket in this test.
-  password
+  create_account
   ssh_server 127.0.0.1
   test "$(nc -G 2 -z 127.0.0.1 2222 >/dev/null 2>&1; echo $?)" = 0 ||
     die "Localhost SSH listener failed."
-  local askpass="$state/ssh-askpass" known="$state/known_hosts" user="$(id -un)"
+  local askpass="$state/ssh-askpass" known="$state/known_hosts" user="$WFS_MAC_USER"
   cat > "$askpass" <<ASKPASS
 #!/bin/sh
 cat "$state/password"
@@ -163,7 +178,7 @@ ASKPASS
 }
 summary() {
   local ip user
-  ip="$(cat "$state/ip")"; user="$(id -un)"
+  ip="$(cat "$state/ip")"; user="$WFS_MAC_USER"
   {
     echo "## 🍎 WFS macOS Remote Workspace"
     echo
