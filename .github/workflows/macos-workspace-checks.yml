@@ -4,12 +4,12 @@ on:
     branches: [main]
     paths:
       - "macos/**"
-      - ".github/workflows/MacOS.yml"
+      - ".github/workflows/macos-remote-workspace.yml"
       - ".github/workflows/macos-workspace-checks.yml"
   pull_request:
     paths:
       - "macos/**"
-      - ".github/workflows/MacOS.yml"
+      - ".github/workflows/macos-remote-workspace.yml"
       - ".github/workflows/macos-workspace-checks.yml"
   workflow_dispatch:
 
@@ -33,7 +33,7 @@ jobs:
           python3 -m pip install --disable-pip-version-check -q 'PyYAML==6.0.3'
           python3 - <<'PY'
           import pathlib,yaml
-          workflow=pathlib.Path(".github/workflows/MacOS.yml").read_text(encoding="utf-8")
+          workflow=pathlib.Path(".github/workflows/macos-remote-workspace.yml").read_text(encoding="utf-8")
           parsed=yaml.load(workflow,Loader=yaml.BaseLoader)
           options=parsed["on"]["workflow_dispatch"]["inputs"]
           assert options["runner_label"]["default"] == "macos-15"
@@ -62,6 +62,10 @@ jobs:
           assert 'networksetup -setdnsservers "$service"' in dns_guard
           assert "RUNNER_ENVIRONMENT" in dns_guard
           assert "GITHUB_ACTIONS" in dns_guard
+          assert 'sudo "$kick" -configure -allowAccessFor -specifiedUsers' in script
+          assert 'sudo "$kick" -configure -users "$user" -access -on -privs -all' in script
+          assert "dsAttrTypeNative:naprivs" in script
+          assert "WFS_MAC_ARD_STATUS" in script
           assert "bash macos/workspace.sh" in workflow
           assert "bash macos/install-apps.sh" in workflow
           for forbidden in ("TCC.db","sqlite3","DisableRealtimeMonitoring","vnc password printed","0.0.0.0:5900"):
