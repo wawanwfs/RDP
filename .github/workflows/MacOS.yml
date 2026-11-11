@@ -1,5 +1,5 @@
-name: "🍎 WFS macOS Remote Workspace"
-run-name: "🍎 WFS macOS • ${{ inputs.runner_label }} • ${{ inputs.remote_access }} • ${{ inputs.duration_hours }}h"
+name: "🍎 macOS Remote Workspace"
+run-name: "🍎 macOS • ${{ inputs.runner_label }} • ${{ inputs.remote_access }} • ${{ inputs.duration_hours }}h"
 
 on:
   workflow_dispatch:
