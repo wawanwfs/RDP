@@ -20,6 +20,7 @@ echo "Target user: $user (UID $uid)"
 
 echo
 echo '== GUI bootstrap context =='
+echo "Current launchd session type: $(launchctl managername 2>/dev/null || echo unavailable)"
 gui_ready=no
 if launchctl print "gui/$uid" >/dev/null 2>&1; then
   gui_ready=yes
@@ -44,19 +45,34 @@ for app in Finder Dock SystemUIServer; do
 done
 
 if test "$mode" = --open-finder; then
-  test "$(id -un)" = "$user" ||
-    { echo 'Refusing GUI launch as another account. SSH as the target user.' >&2; exit 3; }
-  test "$console" = "$user" && test "$gui_ready" = yes ||
-    { echo 'Not starting Finder: GUI bootstrap or console ownership does not match.' >&2; exit 3; }
-  echo
-  echo "Attempting Finder launch within user $user existing GUI bootstrap..."
-  launchctl asuser "$uid" /usr/bin/open -a Finder ||
-    { echo 'Finder launch was rejected by macOS'; exit 4; }
+  # On modern macOS a GUI bootstrap may exist while this SSH process remains
+  # in an unrelated audit session. 'launchctl asuser' cannot necessarily
+  # switch to that audit session: Operation not permitted is expected.
+  manager="$(launchctl managername 2>/dev/null || echo unavailable)"
+  echo "Current launchd session type: $manager"
+  if test "$manager" != Aqua; then
+    echo 'Cannot open Finder from an SSH/background audit session.' >&2
+    echo 'A registered gui/UID domain and matching /dev/console owner are NOT' >&2
+    echo 'proof that SSH is allowed to spawn graphical apps in that domain.' >&2
+    echo 'Only an authorized interactive Aqua session can start Finder here.' >&2
+    echo 'No permission, login or security policy was changed.' >&2
+    exit 4
+  fi
+  test "$(id -un)" = "$user" && test "$console" = "$user" &&
+    test "$gui_ready" = yes || {
+      echo 'Finder launch refused: wrong user, console or GUI bootstrap.' >&2
+      exit 3
+    }
+  /usr/bin/open -a Finder || { echo 'macOS Finder launch failed.' >&2; exit 4; }
   sleep 3
-  ps -A -o user= -o comm= |
-    awk -v target="$user" '$1 == target && $2 ~ /\/Finder$/ {print "Finder process:", $1, $2}'
-  echo 'Finder start request sent. Reconnect VNC to check visual result.'
-  # Do not change sharing privileges, loginwindow, Dock, SIP or TCC.
+  if ps -A -o user= -o comm= | awk -v target="$user" '
+    $1 == target && $2 ~ /\/Finder$/ { found=1; exit }
+    END {exit found?0:1}'; then
+    echo 'Finder is running under the target account.'
+  else
+    echo 'open returned but Finder is still not running; GUI remains unverified.' >&2
+    exit 5
+  fi
   exit 0
 fi
 
@@ -115,8 +131,11 @@ fi
 echo
 echo 'Next actions:'
 if test "$console" = "$user" && test "$gui_ready" = yes; then
-  echo 'If Finder is absent, optionally run: bash macos/diagnose-desktop-session.sh wfsremote --open-finder'
+  echo 'GUI domain exists, but this SSH login may have a different audit session.'
+  echo 'Do not retry launchctl asuser from SSH if macOS returns Operation not permitted.'
+  echo 'Finder/Dock may only start from an authorized interactive Aqua session.'
 else
-  echo 'No matching complete GUI session; launching Finder from SSH cannot create a supported graphical login.'
+  echo 'No matching full Aqua console session; SSH cannot create an interactive desktop.'
 fi
+echo 'For macOS 12.1+, Apple requires GUI/MDM approval for full Screen Sharing.'
 echo 'Read-only check complete. No image stored, no password changed.'
