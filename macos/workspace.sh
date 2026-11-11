@@ -167,12 +167,16 @@ ASKPASS
   # SSH_ASKPASS_REQUIRE=force lets OpenSSH authenticate non-interactively
   # without printing a password or requiring an interactive GitHub job TTY.
   local identity
-  identity="$(SSH_ASKPASS="$askpass" SSH_ASKPASS_REQUIRE=force DISPLAY=:0 \
+  if ! identity="$(SSH_ASKPASS="$askpass" SSH_ASKPASS_REQUIRE=force DISPLAY=:0 \
     ssh -o ConnectionAttempts=1 -o ConnectTimeout=10 \
       -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile="$known" \
       -o PreferredAuthentications=password -o PubkeyAuthentication=no \
-      -o BatchMode=no -p 2222 "$user@127.0.0.1" 'id -un' </dev/null)" ||
+      -o BatchMode=no -p 2222 "$user@127.0.0.1" 'id -un' </dev/null 2>"$state/ssh-client.log")"; then
+    warn "SSH password login did not succeed; showing client/server errors (never password)."
+    tail -n 15 "$state/ssh-client.log" || true
+    sudo tail -n 25 "$state/sshd.log" || true
     die "SSH password authentication smoke failed."
+  fi
   test "$identity" = "$user" || die "SSH authenticated as unexpected user."
   say "PASS: macOS local SSH authenticated using temporary password, 127.0.0.1:2222."
 }
@@ -222,8 +226,13 @@ keepalive() {
   done
 }
 cleanup() {
-  if test -s "$state/sshd.pid"; then sudo kill "$(cat "$state/sshd.pid")" >/dev/null 2>&1 || true; fi
-  rm -rf "$state" >/dev/null 2>&1 || true
+  if test -s "$state/sshd.pid"; then
+    pid="$(sudo cat "$state/sshd.pid" 2>/dev/null || true)"
+    if [[ "$pid" =~ ^[0-9]+$ ]]; then sudo kill "$pid" >/dev/null 2>&1 || true; fi
+  fi
+  if test "$state" = "$RUNNER_TEMP/wfs-macos"; then
+    sudo rm -rf "$state" >/dev/null 2>&1 || true
+  fi
   say "Temporary state removed."
 }
 case "$1" in
