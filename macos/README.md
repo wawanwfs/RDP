@@ -8,7 +8,7 @@
 [![Platform](https://img.shields.io/badge/Platform-macOS%2015%20%2F%2026-111111?style=for-the-badge&logo=apple)](https://github.com/actions/runner-images)
 [![Private Network](https://img.shields.io/badge/Network-Tailscale%20Private-242424?style=for-the-badge)](https://tailscale.com)
 
-[**▶ Run WFS macOS Workspace**](https://github.com/wawanwfs/RDP/actions/workflows/MacOS.yml) · [**View CI**](https://github.com/wawanwfs/RDP/actions/workflows/macos-workspace-checks.yml) · [**Root README**](../README.md)
+[**▶ Run WFS macOS Workspace**](https://github.com/wawanwfs/RDP/actions/workflows/macos-remote-workspace.yml) · [**View CI**](https://github.com/wawanwfs/RDP/actions/workflows/macos-workspace-checks.yml) · [**Root README**](../README.md)
 
 </div>
 
@@ -16,7 +16,7 @@
 
 ## 1. What this provides
 
-WFS Remote Workspaces mempunyai **tiga** workflow utama: [Windows RDP](../.github/workflows/windows-remote-workspace-with-apps.yml), [Linux XRDP](../.github/workflows/linux-remote-workspace.yml), dan [macOS native](../.github/workflows/MacOS.yml). macOS menggunakan **runner macOS asli dari GitHub** yang di-host di infrastruktur perangkat Apple, **bukan** Docker/Linux yang menyamar sebagai macOS, bukan QEMU, dan bukan instalasi Hackintosh.
+WFS Remote Workspaces mempunyai **tiga** workflow utama: [Windows RDP](../.github/workflows/windows-remote-workspace-with-apps.yml), [Linux XRDP](../.github/workflows/linux-remote-workspace.yml), dan [macOS native](../.github/workflows/macos-remote-workspace.yml). macOS menggunakan **runner macOS asli dari GitHub** yang di-host di infrastruktur perangkat Apple, **bukan** Docker/Linux yang menyamar sebagai macOS, bukan QEMU, dan bukan instalasi Hackintosh.
 
 | Capability | Supported / limitation |
 |:--|:--|
@@ -92,7 +92,7 @@ Untuk mode `same_from_secret`, gunakan nilai `RDP_PASSWORD` seperti biasa. Ini l
 
 ## 4. Launch workflow
 
-1. Buka [**WFS macOS Workspace → Run workflow**](https://github.com/wawanwfs/RDP/actions/workflows/MacOS.yml) dan pilih branch `main`.
+1. Buka [**WFS macOS Workspace → Run workflow**](https://github.com/wawanwfs/RDP/actions/workflows/macos-remote-workspace.yml) dan pilih branch `main`.
 2. Untuk uji awal pilih **macos-15**, **both**, **1 hour**, username **`wfsremote`**, hostname **rdp-runner**, `same_from_secret`, aplikasi `none`. **Jalankan workflow baru dari `main`**, jangan gunakan *Re-run jobs* pada run lama: GitHub memakai SHA lama ketika mengulang run.
 3. Baca langkah **Connect macOS runner to private Tailscale** dan **Setup isolated tailnet SSH and/or best-effort Screen Sharing**. Jangan menyimpulkan GUI berhasil hanya karena workflow masuk Keep Alive.
 4. Lihat **Actions Summary**: IP Tailscale, username macOS sebenarnya, status SSH, status VNC, dan petunjuk koneksi.
@@ -147,7 +147,7 @@ Sumber: [Apple Software License Agreement for macOS Tahoe](https://www.apple.com
 
 **Fix:** `macos/workspace.sh` now updates and exports status variables immediately **and** writes `GITHUB_ENV`. The exact failure mode has a dedicated `status-smoke` test, and [regression CI #43028698293](https://github.com/wawanwfs/RDP/actions/runs/43028698293) passed **3/3 jobs**, including both Apple Silicon and Intel. Full external client SSH and interactive VNC login still require a new manual workflow run.
 
-**After fixing:** start a **new** [macOS workflow](https://github.com/wawanwfs/RDP/actions/workflows/MacOS.yml) from the current `main` branch, choose `macos-15-intel`, remote `both`, username `wfsremote`, duration `1`. Do **not** use *Re-run jobs* on the old failure because GitHub reruns the original commit.
+**After fixing:** start a **new** [macOS workflow](https://github.com/wawanwfs/RDP/actions/workflows/macos-remote-workspace.yml) from the current `main` branch, choose `macos-15-intel`, remote `both`, username `wfsremote`, duration `1`. Do **not** use *Re-run jobs* on the old failure because GitHub reruns the original commit.
 
 ### Run #43029810843 — macOS Tailscale step stayed active
 
@@ -163,7 +163,17 @@ Mitigations implemented for **new runs**:
 4. If the step fails or times out, the workflow publishes an explicit unavailable status. No public SSH/VNC ports are opened as a workaround, and there is **no guarantee** the DNS restore runs if the underlying macOS runner loses connection to GitHub entirely.
 5. [macOS CI](https://github.com/wawanwfs/RDP/actions/runs/43032166865) passes **3/3 jobs** (static syntax/security + native ARM64/Intel DNS-backup and local SSH-auth checks). It **does not authenticate to the user's Tailscale account**, because CI intentionally has no production tailnet secrets.
 
-**Usage:** cancel the stuck manual run if it remains in progress, then start **a new** [macOS workflow](https://github.com/wawanwfs/RDP/actions/workflows/MacOS.yml) from `main`. Do **not** use *Re-run jobs* on a workflow that points to an older commit, as that reruns the old code.
+**Usage:** cancel the stuck manual run if it remains in progress, then start **a new** [macOS workflow](https://github.com/wawanwfs/RDP/actions/workflows/macos-remote-workspace.yml) from `main`. Do **not** use *Re-run jobs* on a workflow that points to an older commit, as that reruns the old code.
+
+### RealVNC/1Remote: macOS offers Apple authentication but refuses login
+
+A real external SSH + VNC test showed `RFB 003.889` and security types `[30, 33, 36, 35]`, with console user `runner` and remote SSH account `wfsremote`. These are **Apple authentication methods**, including Diffie-Hellman type 30; classic VNC password type `2` is **not offered**. Thus a VNC client supporting only classic password authentication cannot connect, and a valid SSH password does not by itself prove macOS Remote Management authorization. <https://www.iana.org/assignments/rfb>
+
+**Changes for new runs:** The installer now configures Remote Management in separate scoped commands: allow **only specified accounts**, grant `wfsremote` Observe/Control permissions, attempt Screen Sharing group membership if present, restart ARD, and check the account's `dsAttrTypeNative:naprivs` attribute. The Actions Summary includes `Remote Management user grant` and `Console session user`. A recorded privilege attribute is **not** a successful remote login or proof of screen control.
+
+**From Windows:** connect using the current private Tailscale IPv4 and port `5900`, with **Apple username/password authentication**, ideally first in TigerVNC. Test SSH separately on port `2222`. If RealVNC reports an authentication error, try TigerVNC and check the grant status in the *new* run's Summary; do not assume the password is incorrect or enable weak classic 8-character VNC authentication.
+
+**Mac limitation:** Apple states that on macOS 12.1+ full Screen Sharing cannot be enabled through `kickstart`; Remote Management enabled by command line can be restricted to view-only. On GitHub-hosted machines without an authorized GUI/MDM configuration, fully controllable desktop access is **not guaranteed** even if SSH works, the RFB banner is present, and a user permission attribute exists. See [Apple official Remote Management guidance](https://support.apple.com/en-bw/guide/remote-desktop/apd8b1c65bd/mac). To operate macOS GUI reliably, use a managed Apple Mac with Screen Sharing enabled via System Settings or appropriate MDM.
 
 ## 8. Troubleshooting and acceptance gates
 
