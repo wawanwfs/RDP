@@ -42,6 +42,11 @@ jobs:
           assert options["remote_access"]["default"] == "both"
           assert options["duration_hours"]["default"] == "1"
           assert parsed["jobs"]["macos-workspace"]["timeout-minutes"] == "360"
+          script = pathlib.Path("macos/workspace.sh").read_text(encoding="utf-8")
+          assert "RFB_READY_GUI_CONTROL_UNVERIFIED" in script
+          assert "Not an RFB endpoint" in script
+          assert "VNC-only mode unavailable" in script
+          assert "Both mode" not in script or "WFS_MAC_SSH_STATUS" in script
           assert "secrets.RDP_PASSWORD" in workflow
           assert "secrets.TAILSCALE_AUTH_KEY" in workflow
           assert "tailscale/github-action@v4" in workflow
