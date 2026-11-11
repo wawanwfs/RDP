@@ -116,12 +116,38 @@ jobs:
           bash macos/workspace.sh prepare
           echo "macOS: $(sw_vers -productVersion), arch=$(uname -m), user=$(id -un)"
           test -x /usr/bin/sudo
+      - name: "🛡️ Preserve macOS DNS and verify Tailscale auth key"
+        timeout-minutes: 2
+        env:
+          WFS_TS_AUTHKEY: ${{ secrets.TAILSCALE_AUTH_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "$WFS_TS_AUTHKEY" || {
+            echo "::error title=Missing Tailscale Key::TAILSCALE_AUTH_KEY repository secret is empty or not accessible."
+            exit 1
+          }
+          bash macos/tailscale-dns-guard.sh backup
       - name: "🐾 Connect macOS runner to private Tailscale"
+        timeout-minutes: 7
         uses: tailscale/github-action@v4
         with:
           authkey: ${{ secrets.TAILSCALE_AUTH_KEY }}
           hostname: ${{ env.WFS_MAC_HOSTNAME }}
-          version: latest
+          # Pin a stable release. The 'latest' special value may resolve
+          # macOS binaries from the upstream development branch.
+          version: 1.104.5
+          timeout: 90s
+          retry: "1"
+          args: --accept-dns=false
+          log-mode: normal
+      - name: "🌐 Restore runner DNS after Tailscale setup"
+        if: always()
+        timeout-minutes: 2
+        run: |
+          if test -f macos/tailscale-dns-guard.sh; then
+            bash macos/tailscale-dns-guard.sh restore
+            bash macos/tailscale-dns-guard.sh diagnose
+          fi
       - name: "🔐 Setup isolated tailnet SSH and/or best-effort Screen Sharing"
         timeout-minutes: 8
         run: bash macos/workspace.sh setup
