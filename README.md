@@ -17,7 +17,7 @@
 
 | 🪟 Windows | 🐧 Linux | 🍎 macOS |
 |:---:|:---:|:---:|
-| [**▶ Launch Windows**](https://github.com/wawanwfs/RDP/actions/workflows/windows-remote-workspace-with-apps.yml) | [**▶ Launch Linux**](https://github.com/wawanwfs/RDP/actions/workflows/linux-remote-workspace.yml) | [**▶ Launch macOS**](https://github.com/wawanwfs/RDP/actions/workflows/MacOS.yml) |
+| [**▶ Launch Windows**](https://github.com/wawanwfs/RDP/actions/workflows/windows-remote-workspace-with-apps.yml) | [**▶ Launch Linux**](https://github.com/wawanwfs/RDP/actions/workflows/linux-remote-workspace.yml) | [**▶ Launch macOS**](https://github.com/wawanwfs/RDP/actions/workflows/macos-remote-workspace.yml) |
 | Windows 2025 | Ubuntu + KDE Plasma | Apple-backed macOS 15 / 26 |
 | RDP / noVNC | XRDP / Webtop | SSH + experimental Apple VNC |
 | Native Win32 apps | Native Linux apps + Wine | Native macOS tooling |
@@ -35,7 +35,7 @@ WFS Remote Workspaces menyediakan **tiga workflow utama** yang dikelola dalam sa
 
 | Aspek | 🪟 Windows | 🐧 Linux | 🍎 macOS |
 |:--|:--|:--|:--|
-| Main workflow | [Windows](.github/workflows/windows-remote-workspace-with-apps.yml) | [Linux](.github/workflows/linux-remote-workspace.yml) | [macOS](.github/workflows/MacOS.yml) |
+| Main workflow | [Windows](.github/workflows/windows-remote-workspace-with-apps.yml) | [Linux](.github/workflows/linux-remote-workspace.yml) | [macOS](.github/workflows/macos-remote-workspace.yml) |
 | Host | GitHub Windows runner | Ubuntu runner + LinuxServer Webtop | **Genuine GitHub Apple macOS runner** |
 | Default desktop | Windows | Ubuntu KDE Plasma | macOS 15 / Apple Silicon |
 | Access method | **RDP** | **XRDP** | **SSH** + experimental Apple Screen Sharing |
@@ -104,7 +104,7 @@ Native Linux Webtop images do not require QEMU; Windows runs natively on its hos
 
 | Item | Detail |
 |:--|:--|
-| **Launch** | [WFS macOS Remote Workspace](https://github.com/wawanwfs/RDP/actions/workflows/MacOS.yml) |
+| **Launch** | [WFS macOS Remote Workspace](https://github.com/wawanwfs/RDP/actions/workflows/macos-remote-workspace.yml) |
 | **Runners** | `macos-15`, `macos-26`, `macos-15-intel`, `macos-26-intel` |
 | **Remote mode** | `both` default, atau `ssh`/`vnc`; GUI **eksperimental** |
 | **SSH** | `ssh -p 2222 wfsremote@100.x.x.x` di PowerShell Windows, ganti IP/user dari Summary |
