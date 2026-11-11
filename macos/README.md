@@ -191,6 +191,24 @@ It displays the real console owner, ARD `naprivs` attribute, `com.apple.access_s
 
 Try [TigerVNC Viewer](https://github.com/TigerVNC/tigervnc/releases) from Windows against the current **Tailscale IP** and `::5900` using Apple-compatible username/password mode, not a legacy type-2-only profile. If VNC still refuses access even with an ARD grant, note the Apple-supported limitation: on macOS 12.1+ the `kickstart` command does not enable fully interactive Screen Sharing. Genuine screen control may require authorized configuration through **System Settings** or MDM on a manageable Mac. Do not disable SIP/TCC or enable weaker 8-character legacy VNC passwords as a workaround. See [Apple Remote Desktop guidance](https://support.apple.com/en-bw/guide/remote-desktop/apd8b1c65bd/mac).
 
+### TigerVNC connects but shows a completely black macOS desktop
+
+A real session with **macOS 26.6.1 (Intel)** showed the Apple RFB handshake (`RFB 003.889`, authentication types `30,33,36,35`) and successful SSH, with **console owner `runner` and SSH user `wfsremote`**. TigerVNC no longer showed an authentication error but rendered an entirely **black framebuffer**. This is **not a confirmed working GUI** and may indicate an inactive/locked console session, missing graphical display, or Screen Sharing capture restrictions on a headless hosted runner. See the [GitHub runner display discussion](https://github.com/actions/runner-images/discussions/5730) and [macOS VNC black-screen guidance](https://www.scivision.dev/vncserver-setup-macos/).
+
+The following diagnostic is safe to run **during the same live SSH session**; it does not change the working SSH credentials or any Screen Sharing policy:
+
+```bash
+curl -fsSLo /tmp/wfs-diagnose-display.sh https://raw.githubusercontent.com/wawanwfs/RDP/main/macos/diagnose-display.sh
+bash -n /tmp/wfs-diagnose-display.sh
+bash /tmp/wfs-diagnose-display.sh wfsremote
+```
+
+It reports the active console user, WindowServer/Finder/loginwindow process presence, number of CoreGraphics displays, and whether a temporary private screencapture returns image bytes. The private screenshot is deleted immediately; pixel contents are **not** uploaded, retained, or analyzed. A successful capture does **not** prove a non-black VNC framebuffer. A failed capture from `wfsremote` may simply reflect macOS TCC privacy restrictions.
+
+**Low-risk display wake test:** Move the mouse in TigerVNC and wait briefly. From SSH, `caffeinate -u -t 120` requests two minutes of display activity (does not change persistent power settings). If the framebuffer remains black, do not run password-reset, SIP/TCC bypass, `tccutil reset`, or internet scripts that change the system sharing permissions.
+
+If no usable console desktop exists on the GitHub-hosted runner, **a listener on port 5900 and correct ARD group grants cannot create one**. For repeatable controllable GUI access use a genuine Apple-hosted Mac with a logged-in graphical session and System Settings/MDM-approved Screen Sharing. For terminal and development work, keep using SSH or VS Code Remote SSH.
+
 ## 8. Troubleshooting and acceptance gates
 
 | Symptom | Diagnose |
