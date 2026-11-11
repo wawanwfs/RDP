@@ -129,7 +129,7 @@ Distro native memakai tag [LinuxServer Webtop](https://docs.linuxserver.io/image
 
 ### 📈 MetaTrader installation — no fake success status
 
-Saat `metatrader_choice=mt4`, `mt5`, atau `both`, workflow memanggil [`linux/install-metatrader.sh`](linux/install-metatrader.sh) secara otomatis **setelah desktop XRDP disiapkan**. Script memasang Wine/Xvfb dari repositori distro dan mencoba **paket resmi Exness MT4/MT5** pada prefix Wine terpisah. **Hanya file executable yang benar** yang dihitung sebagai pemasangan; uji jendela MT5 pada X11 disediakan terpisah karena Wine dapat memunculkan pesan debugger palsu pada build terbaru.
+Saat `metatrader_choice=mt4`, `mt5`, atau `both`, workflow memanggil [`linux/install-metatrader.sh`](linux/install-metatrader.sh) otomatis **setelah XRDP dan browser disiapkan**. Script memakai **MT4 Exness dan MT5 MetaQuotes** pada prefix Wine terpisah. Pemasangan hanya menghitung executable yang benar; **uji jendela MT5** dipisahkan karena build MT5 terbaru dapat memunculkan dialog debugger palsu pada Wine.
 
 - **MT5:** installer `mt5setup.exe /auto` resmi; hanya dinyatakan `INSTALLED` jika `terminal64.exe` yang benar, launcher, dan shortcut ada.
 - **MT4:** menggunakan **installer Exness dari tautan resmi**. Pada Wine/Ubuntu, bootstrap MT4 dapat memerlukan GUI sehingga `/auto` bisa berhenti tanpa memasang terminal. Jika demikian, workflow menyimpan installer ke direktori pengguna, membuat shortcut **Install MetaTrader 4 (WFS)** di desktop remote, dan mencatat status **`PENDING_INTERACTIVE`**, bukan `INSTALLED`. Klik shortcut tersebut setelah masuk XRDP dan ikuti wizard. MT4 dinyatakan `INSTALLED` hanya jika `terminal.exe` benar-benar terpasang.
@@ -153,7 +153,7 @@ Jika setup otomatis tidak menghasilkan terminal yang benar, script menyalin inst
 
 Pada pengujian KDE/RDP, **MT5 dapat berhasil terinstal tetapi gagal saat dibuka**, menampilkan `A debugger has been found running in your system`. Laporan MQL5 pada Oktober 2026 menghubungkan gejala ini dengan kompatibilitas **build MT5 terkini dan Wine**, termasuk Wine 9/10. Run pengguna sebelumnya mencatat Wine 10.0. Karena itu penggantian Wine saja **tidak dijadikan klaim perbaikan pasti**.
 
-- MT5 Linux sekarang mencoba **installer Exness resmi** pada prefix Wine terpisah, bukan installer generik sebelumnya.
+- Installer Exness MT5 resmi **telah diuji** tetapi mode `/auto` tidak menyelesaikan instalasi di Wine. Jalur otomatis kembali memakai **installer MetaQuotes** yang terbukti menghasilkan executable; **GUI tetap harus diuji terpisah**.
 - [`test-metatrader-gui.sh`](linux/test-metatrader-gui.sh) menguji **jendela MT5 sungguhan** di Xvfb. Hasil GUI dipisahkan dari pemeriksaan bahwa `terminal64.exe` ada.
 - Jika Wine tidak kompatibel, tersedia menu **MetaTrader WebTerminal (WFS fallback)** yang membuka terminal berbasis browser di Chromium. Ini tidak mendukung EA desktop.
 - Untuk kebutuhan **MetaTrader 5/MetaEditor/EA desktop**, workflow **Windows RDP native** tetap jalur dengan kompatibilitas paling baik dan instalasi MT4/MT5 yang sudah terverifikasi; login dan EA harus diuji sebelum penggunaan sungguhan.
