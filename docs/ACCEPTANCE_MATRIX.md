@@ -41,7 +41,7 @@ All three use Tailscale (private tailnet only), `rdp-runner` as default hostname
 | Tailnet SSH listener | Must be checked after [macOS workflow run](../.github/workflows/MacOS.yml) | `ListenAddress` private 100.x.x.x, TCP :2222 responds, restricted user |
 | Local SSH authentication | [macOS ARM64+Intel CI](https://github.com/wawanwfs/RDP/actions/runs/42965871428) | Dedicated user `wfsremote` created, macOS Directory Services password verified, real OpenSSH login accepted via loopback on both CPU architectures |
 | External SSH authentication | Client-side acceptance **not yet performed** | Authorized Windows device on Tailscale logs in to 100.x.x.x:2222 as `wfsremote` |
-| Screen Sharing listener | Best-effort GitHub-hosted macOS | TCP :5900 may open; `PORT_OPEN_GUI_CONTROL_UNVERIFIED` is **not** acceptance |
+| Screen Sharing listener | Best-effort GitHub-hosted macOS | TCP :5900 may open and reply with an RFB banner; `RFB_READY_GUI_CONTROL_UNVERIFIED` is **not** acceptance |
 | Actual GUI control | Client-side acceptance **not yet performed** | VNC viewer reaches Finder, mouse/keyboard works, no black screen and no view-only restriction |
 | Hackintosh | Not provided | No unsupported x86 PC macOS installation or non-Apple VM |
 
