@@ -51,6 +51,7 @@ Sumber: [Apple — Remote Management](https://support.apple.com/guide/remote-des
 |:--|:--|:--|
 | `runner_label` | **macos-15** | macos-15, macos-26, macos-15-intel, macos-26-intel |
 | `remote_username` | **wfsremote** | Custom new lowercase macOS account (does not modify `runner`) |
+| `gui_preview` | **true** | Private read-only browser preview on port 6081; set false to disable |
 | `remote_access` | **both** | both / ssh / vnc |
 | `duration_hours` | **1** | 1, 3, 6 |
 | `tailscale_hostname` | **rdp-runner** | Custom lowercase/digits/hyphen |
@@ -234,6 +235,28 @@ bash /tmp/wfs-session.sh wfsremote
 A non-black screenshot **does not guarantee Finder or Dock is present**; it might represent a login UI, blank wallpaper, or a different screen surface. Compare the VNC view to the client display only after an approved graphical session is available.
 
 If the screenshot samples are nearly 100% black despite a live GUI session, or Finder exists but VNC remains black, the likely obstacle is an unavailable screen surface or **macOS Remote Management screen-capture permission**. On macOS 12.1+, `kickstart` alone does not guarantee interactive Screen Sharing. Using `launchctl` to start the service does not grant TCC capture permissions. For approved access, configure Screen Sharing via System Settings or device MDM on a genuine Apple host rather than hacking TCC databases. See [Screens black-display troubleshooting](https://help.edovia.com/en-GB/screens-5/troubleshooting/blank-screen) and [Apple Remote Management](https://support.apple.com/guide/remote-desktop/enable-remote-management-apd8b1c65bd/mac).
+
+### New: private web-based desktop preview when Apple VNC stays black
+
+**Option A remains a genuine GitHub-hosted macOS runner, with no additional Mac rental.** If macOS accepts SSH and VNC RFB authentication but TigerVNC still shows a black framebuffer, WFS now offers an **independent screenshot-based viewer** implemented in [`macos/gui-preview.py`](gui-preview.py). This is not a new VNC server: it runs `screencapture` **as the isolated `wfsremote` user**, sends PNG frames through a private HTTP service, and displays them in an auto-refreshing Windows browser.
+
+New [macOS workflow](../.github/workflows/macos-remote-workspace.yml) input: `gui_preview=true` (default). It starts [`macos/start-gui-preview.sh`](start-gui-preview.sh) after remote account, Tailscale and SSH setup. If started, the Summary displays a screenshot-preview status. To connect:
+
+1. Connect your Windows device to the same Tailscale tailnet.
+2. Open `http://100.x.x.x:6081/` in your browser, using the **Private Tailscale IP for the NEW workflow run**.
+3. When prompted, use username `wfsremote` (or your chosen remote username) and the remote-account password stored in the `RDP_PASSWORD` secret for `same_from_secret` mode.
+4. Wait for a frame. The page reports screenshot failures rather than pretending a black VNC canvas is usable. Test the displayed screenshot against macOS's on-host display capture.
+
+**Security:** The listener binds *only* to an address inside Tailscale's IPv4 `100.64.0.0/10` network; never to `0.0.0.0` or the public NIC. HTTP Basic authentication uses the existing 12+-character remote password, protected in transit by **Tailscale's encrypted peer-to-peer transport**. Credentials are not placed in URLs or logs. PNG frames are created in a private temporary file, read, then removed; the server does not archive or upload them. Don't expose port 6081 with Funnel, public port forwarding, or an unencrypted Internet proxy.
+
+**Critical acceptance distinction:**
+
+- `LISTENER_READY_FRAME_UNVERIFIED` means only TCP listener creation has been observed, **not** a working display.
+- A rendered, current browser screenshot confirms **viewing** only, not native VNC framebuffer repair.
+- **This preview is READ-ONLY**, with no mouse or keyboard API. Full desktop interaction still requires working Apple Screen Sharing or separately approved macOS Accessibility/Input Monitoring permissions. TCC/SIP are never bypassed.
+- CI tests validate actual screenshot PNG responses, HTTP 401 for unauthorized clients and HTTP 405 for mutation attempts, using a **loopback-only preview** on official Apple Silicon/Intel runners. These native checks **do not** replace testing the live `wfsremote` virtual session after VNC login.
+
+This approach follows from the user's observations: `screencapture` under `wfsremote` returned a 1024×768 image with only 2% near-black samples while TigerVNC showed a fully black framebuffer. The two capture paths therefore need independent acceptance. The underlying Apple VNC limitation persists until a fully controllable Aqua session is established and authorized.
 
 ## 8. Troubleshooting and acceptance gates
 
