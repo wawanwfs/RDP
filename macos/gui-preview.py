@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""WFS macOS GUI Mirror: authenticated read-only screenshot stream on Tailscale.
+"""WFS macOS GUI Mirror: authenticated, consent-aware manual screen snapshots.
 
 This does not bypass macOS Screen Recording, Accessibility, TCC, SIP, or GUI
 login requirements. It uses macOS's own screencapture CLI if allowed.
@@ -20,34 +20,38 @@ import time
 
 HTML = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>WFS macOS Live Preview</title>
+<title>WFS macOS Screen Preview</title>
 <style>
 :root{color-scheme:dark}*{box-sizing:border-box}body{margin:0;background:#080c14;color:#e5eaf5;font:15px system-ui,-apple-system,sans-serif}
 header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:15px 22px;border-bottom:1px solid #202b3d;background:#111725}
-h1{font-size:18px;margin:0}.sub{color:#92a0b9;font-size:12px;margin-top:4px}.status{color:#79dda8;font-size:12px}
+h1{font-size:18px;margin:0}.sub{color:#92a0b9;font-size:12px;margin-top:4px}.status{color:#79dda8;font-size:12px}button{background:#2563eb;color:white;border:0;border-radius:8px;padding:9px 15px;cursor:pointer;font:inherit}button:disabled{opacity:.45;cursor:not-allowed}.actions{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
 main{padding:22px;max-width:1480px;margin:auto}.stage{border:1px solid #28374d;background:#020306;border-radius:14px;min-height:350px;display:flex;align-items:center;justify-content:center;overflow:hidden}
 img{max-width:100%;max-height:78vh;object-fit:contain}.hint{line-height:1.55;color:#99a9c3;font-size:13px;margin:14px 0}
 </style></head><body>
-<header><div><h1>WFS macOS · Live Preview</h1><div class="sub">Private Tailscale · Screenshot mirror · Read-only</div></div><span id="status" class="status">Connecting…</span></header>
+<header><div><h1>WFS macOS · Screen Preview</h1><div class="sub">Private Tailscale · Manual capture · Read-only</div></div><div class="actions"><button id="capture" type="button">Capture one frame</button><span id="status" class="status">Paused · no recording requests</span></div></header>
 <main><div class="stage"><img id="frame" alt="Current macOS display screenshot" /></div>
-<p class="hint">This live view uses macOS screencapture rather than Apple's VNC framebuffer. It does not accept mouse or keyboard input. A working screenshot is not proof of interactive Aqua access. Never share credentials or expose this private port to the Internet.</p>
+<p class="hint">Capture is paused by default to prevent repeated macOS Screen Recording consent dialogs. Click once only after reviewing any macOS consent request. Captures are limited to one new image per minute. View-only: mouse and keyboard control is NOT supported. Keep this service private to your Tailscale network.</p>
 </main>
 <script>
 const img=document.getElementById('frame'),status=document.getElementById('status');
-let loop=null;
-async function refresh(){
+const button=document.getElementById('capture');
+let busy=false;
+async function captureOne(){
+ if(busy)return;
+ busy=true;button.disabled=true;
+ status.textContent='Requesting one screenshot…';
  try {
   const result=await fetch('/frame.png?seq='+Date.now(),{cache:'no-store'});
-  if (!result.ok) throw new Error('HTTP '+result.status);
+  if(!result.ok)throw new Error('HTTP '+result.status);
   const blob=await result.blob();
-  const url=URL.createObjectURL(blob), old=img.dataset.url;
-  img.onload=()=>{if(old) URL.revokeObjectURL(old)};
-  img.src=url; img.dataset.url=url;
-  status.textContent='Frame received · '+new Date().toLocaleTimeString();
- }catch(e){status.textContent='Screenshot unavailable: '+e.message}
+  const url=URL.createObjectURL(blob),old=img.dataset.url;
+  img.onload=()=>{if(old)URL.revokeObjectURL(old)};
+  img.src=url;img.dataset.url=url;
+  status.textContent='Frame received · '+new Date().toLocaleTimeString()+' · paused';
+ }catch(e){status.textContent='Capture unavailable: '+e.message+' · paused'}
+ finally{busy=false;button.disabled=false}
 }
-refresh();loop=setInterval(refresh,1800);
-document.addEventListener('visibilitychange',()=>{if(document.hidden){clearInterval(loop)}else{refresh();loop=setInterval(refresh,1800)}});
+button.addEventListener('click',captureOne);
 </script></body></html>"""
 
 class Mirror(http.server.ThreadingHTTPServer):
@@ -158,13 +162,13 @@ def main():
     parser.add_argument("--port",type=int,default=6081)
     parser.add_argument("--username",default="wfsremote")
     parser.add_argument("--password-file",required=True,help="0600 file; never expose password in arguments or logs")
-    parser.add_argument("--min-interval",type=float,default=1.4)
+    parser.add_argument("--min-interval",type=float,default=60.0)
     args=parser.parse_args()
     host=ipaddress.ip_address(args.host)
     if host.version != 4 or not (host in ipaddress.ip_network("100.64.0.0/10") or host == ipaddress.ip_address("127.0.0.1")):
         parser.error("Mirror can only bind a Tailscale IPv4 or loopback")
-    if not 1024<=args.port<=65535 or not .5<=args.min_interval<=30:
-        parser.error("Unsafe port or screenshot interval")
+    if not 1024<=args.port<=65535 or not 60<=args.min_interval<=3600:
+        parser.error("Unsafe port or screenshot interval; at least 60 seconds required to avoid TCC prompt storms")
     file=Path(args.password_file)
     if (file.stat().st_mode & 0o077) != 0:
         parser.error("Password file must not be group/other-readable")
