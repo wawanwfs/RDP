@@ -37,7 +37,7 @@ WFS Remote Workspaces mempunyai **tiga** workflow utama: [Windows RDP](../.githu
 
 ### Why VNC is experimental
 
-Pada macOS 12.1 dan lebih baru, Apple membatasi pengaktifan Screen Sharing lewat alat command-line. **Remote Management yang diaktifkan via kickstart dapat hanya view-only**, dan runner GitHub-hosted dapat beroperasi tanpa desktop login grafis yang dapat dikendalikan. Membuka port **5900** atau mengaktifkan service **bukan bukti** layar interaktif. WFS menampilkan status aktual di Actions Summary: \`PORT_OPEN_GUI_CONTROL_UNVERIFIED\` atau \`UNAVAILABLE\`, tidak pernah menjanjikan “VNC READY & fully controllable” berdasarkan TCP saja.
+Pada macOS 12.1 dan lebih baru, Apple membatasi pengaktifan Screen Sharing lewat alat command-line. **Remote Management yang diaktifkan via kickstart dapat hanya view-only**, dan runner GitHub-hosted dapat beroperasi tanpa desktop login grafis yang dapat dikendalikan. Membuka port **5900** atau mengaktifkan service **bukan bukti** layar interaktif. WFS menampilkan status aktual di Actions Summary: `PORT_OPEN_GUI_CONTROL_UNVERIFIED` atau `UNAVAILABLE`, tidak pernah menjanjikan “VNC READY & fully controllable” berdasarkan TCP saja.
 
 Sumber: [Apple — Remote Management](https://support.apple.com/guide/remote-desktop/enable-remote-management-apd8b1c65bd/mac) · [GitHub macOS runner images](https://github.com/actions/runner-images) · [GitHub macOS runner limits](https://docs.github.com/en/actions/reference/runners/larger-runners).
 
@@ -45,18 +45,18 @@ Sumber: [Apple — Remote Management](https://support.apple.com/guide/remote-des
 
 | Input | Default | Choices |
 |:--|:--|:--|
-| \`runner_label\` | **macos-15** | macos-15, macos-26, macos-15-intel, macos-26-intel |
-| \`remote_access\` | **both** | both / ssh / vnc |
-| \`duration_hours\` | **1** | 1, 3, 6 |
-| \`tailscale_hostname\` | **rdp-runner** | Custom lowercase/digits/hyphen |
-| \`hostname_mode\` | **same_each_run** | same_each_run / unique_each_run |
-| \`password_mode\` | **same_from_secret** | same_from_secret / random_each_run |
-| \`ide_choice\` | none | vscode |
-| \`coding_agent_choice\` | none | codex / claude / both |
-| \`apps_bundle\` | none | developer / media / all |
-| \`trading_choice\` | none | webterminal |
+| `runner_label` | **macos-15** | macos-15, macos-26, macos-15-intel, macos-26-intel |
+| `remote_access` | **both** | both / ssh / vnc |
+| `duration_hours` | **1** | 1, 3, 6 |
+| `tailscale_hostname` | **rdp-runner** | Custom lowercase/digits/hyphen |
+| `hostname_mode` | **same_each_run** | same_each_run / unique_each_run |
+| `password_mode` | **same_from_secret** | same_from_secret / random_each_run |
+| `ide_choice` | none | vscode |
+| `coding_agent_choice` | none | codex / claude / both |
+| `apps_bundle` | none | developer / media / all |
+| `trading_choice` | none | webterminal |
 
-**Version guidance:** \`macos-15\` (Apple Silicon ARM64) adalah baseline. \`macos-26\` (Apple Silicon ARM64) menggunakan fitur OS lebih baru. Versi \`-intel\` memakai image Intel yang sah dan dapat diperlukan untuk perangkat lunak x64 lama. Jangan lagi memilih \`macos-14\`: GitHub Actions telah menghentikan macOS 14 pada 2 November 2026.
+**Version guidance:** `macos-15` (Apple Silicon ARM64) adalah baseline. `macos-26` (Apple Silicon ARM64) menggunakan fitur OS lebih baru. Versi `-intel` memakai image Intel yang sah dan dapat diperlukan untuk perangkat lunak x64 lama. Jangan lagi memilih `macos-14`: GitHub Actions telah menghentikan macOS 14 pada 2 November 2026.
 
 **Cost note:** menit runner macOS GitHub Actions bisa memakai tarif/multiplier yang lebih mahal dibanding Linux, tergantung status repository dan paket akun. Pilih 1 jam untuk pengujian awal. Tidak ada proses yang mempertahankan runner melewati batas GitHub Actions.
 
@@ -66,29 +66,29 @@ Anda dapat **menggunakan dua secret yang sudah ada** pada repo Windows/Linux, ta
 
 | GitHub Actions repository secret | Usage |
 |:--|:--|
-| \`TAILSCALE_AUTH_KEY\` | Join ephemeral macOS runner ke tailnet yang sama |
-| \`RDP_PASSWORD\` | Password login **akun macOS sementara** dan SSH/VNC (nama secret dipakai ulang, bukan protokol RDP) |
+| `TAILSCALE_AUTH_KEY` | Join ephemeral macOS runner ke tailnet yang sama |
+| `RDP_PASSWORD` | Password login **akun macOS sementara** dan SSH/VNC (nama secret dipakai ulang, bukan protokol RDP) |
 
-Buka [**Repository → Settings → Secrets and variables → Actions**](https://github.com/wawanwfs/RDP/settings/secrets/actions). \`RDP_PASSWORD\` minimal **12 byte** tanpa baris baru. Jangan taruh password, API key, Apple ID, atau token di workflow input, issue, dan log publik.
+Buka [**Repository → Settings → Secrets and variables → Actions**](https://github.com/wawanwfs/RDP/settings/secrets/actions). `RDP_PASSWORD` minimal **12 byte** tanpa baris baru. Jangan taruh password, API key, Apple ID, atau token di workflow input, issue, dan log publik.
 
-**Security model:** akses SSH memakai port custom **2222** dan konfigurasi \`ListenAddress\` mengikat hanya pada Tailscale IPv4; login root dimatikan, password authentication hanya untuk user runner, dan percobaan login dibatasi. Workflow hanya mengubah password akun sementara **ketika RUNNER_ENVIRONMENT=github-hosted**. Tidak ada pembukaan Funnel, publikasi IP publik, edit database TCC, pelemahan SIP, atau perubahan hak akses sistem yang menyiasati izin Apple.
+**Security model:** akses SSH memakai port custom **2222** dan konfigurasi `ListenAddress` mengikat hanya pada Tailscale IPv4; login root dimatikan, password authentication hanya untuk user runner, dan percobaan login dibatasi. Workflow hanya mengubah password akun sementara **ketika RUNNER_ENVIRONMENT=github-hosted**. Tidak ada pembukaan Funnel, publikasi IP publik, edit database TCC, pelemahan SIP, atau perubahan hak akses sistem yang menyiasati izin Apple.
 
-Jika memilih \`password_mode=random_each_run\`, password diturunkan dengan **HMAC-SHA256** dari secret asli dan GitHub Run ID, bukan dicetak ke log. Di komputer Windows Anda, hitung dengan Python lokal (yang sudah terpasang) sebagai berikut:
+Jika memilih `password_mode=random_each_run`, password diturunkan dengan **HMAC-SHA256** dari secret asli dan GitHub Run ID, bukan dicetak ke log. Di komputer Windows Anda, hitung dengan Python lokal (yang sudah terpasang) sebagai berikut:
 
-\`\`\`python
+```python
 import hmac, hashlib, getpass
 secret = getpass.getpass("RDP_PASSWORD secret: ")
 run_id = input("GitHub Actions Run ID: ").strip()
 password = hmac.new(secret.encode(), f"wfs-macos:{run_id}:remote".encode(), hashlib.sha256).hexdigest()[:24]
 print("Temporary macOS login password:", password)
-\`\`\`
+```
 
-Untuk mode \`same_from_secret\`, gunakan nilai \`RDP_PASSWORD\` seperti biasa. Ini lebih sederhana untuk percobaan pertama.
+Untuk mode `same_from_secret`, gunakan nilai `RDP_PASSWORD` seperti biasa. Ini lebih sederhana untuk percobaan pertama.
 
 ## 4. Launch workflow
 
-1. Buka [**WFS macOS Workspace → Run workflow**](https://github.com/wawanwfs/RDP/actions/workflows/MacOS.yml) dan pilih branch \`main\`.
-2. Untuk uji awal pilih **macos-15**, **both**, **1 hour**, hostname **rdp-runner**, \`same_from_secret\`, aplikasi \`none\`.
+1. Buka [**WFS macOS Workspace → Run workflow**](https://github.com/wawanwfs/RDP/actions/workflows/MacOS.yml) dan pilih branch `main`.
+2. Untuk uji awal pilih **macos-15**, **both**, **1 hour**, hostname **rdp-runner**, `same_from_secret`, aplikasi `none`.
 3. Baca langkah **Connect macOS runner to private Tailscale** dan **Setup isolated tailnet SSH and/or best-effort Screen Sharing**. Jangan menyimpulkan GUI berhasil hanya karena workflow masuk Keep Alive.
 4. Lihat **Actions Summary**: IP Tailscale, username macOS sebenarnya, status SSH, status VNC, dan petunjuk koneksi.
 5. Hubungkan perangkat klien ke Tailscale yang sama, lalu uji SSH terlebih dahulu. Jika status VNC menunjukkan port terbuka, uji dengan aplikasi VNC viewer.
@@ -100,32 +100,32 @@ Untuk mode \`same_from_secret\`, gunakan nilai \`RDP_PASSWORD\` seperti biasa. I
 
 Buka PowerShell di komputer Windows yang juga tersambung Tailscale:
 
-\`\`\`powershell
+```powershell
 tailscale status
 Test-NetConnection 100.x.x.x -Port 2222
 ssh -p 2222 runner@100.x.x.x
-\`\`\`
+```
 
-Ganti \`100.x.x.x\` dan username \`runner\` dengan yang **benar-benar ada pada Actions Summary**. Password = \`RDP_PASSWORD\` (atau hasil HMAC per-run). Prompt verifikasi fingerprint host saat pertama kali connect harus diperiksa sebelum disetujui.
+Ganti `100.x.x.x` dan username `runner` dengan yang **benar-benar ada pada Actions Summary**. Password = `RDP_PASSWORD` (atau hasil HMAC per-run). Prompt verifikasi fingerprint host saat pertama kali connect harus diperiksa sebelum disetujui.
 
 SSH bukan desktop. Anda dapat menggunakan shell macOS, git, Homebrew, build tool, dan program terminal dari sini.
 
 ### B. Apple Screen Sharing / VNC (experimental)
 
-Dari Windows pasang aplikasi **RealVNC Viewer** atau **TigerVNC Viewer** (klien desktop), lalu buka \`100.x.x.x:5900\` dari Summary. Dari Mac, gunakan **Finder → Go → Connect to Server** dengan \`vnc://100.x.x.x\`. Gunakan kredensial akun macOS jika server menawarkan autentikasi tersebut.
+Dari Windows pasang aplikasi **RealVNC Viewer** atau **TigerVNC Viewer** (klien desktop), lalu buka `100.x.x.x:5900` dari Summary. Dari Mac, gunakan **Finder → Go → Connect to Server** dengan `vnc://100.x.x.x`. Gunakan kredensial akun macOS jika server menawarkan autentikasi tersebut.
 
 Pada macOS modern, VNC viewer pihak ketiga dan Screen Sharing Apple tidak selalu menggunakan mekanisme login yang sama. **Jangan mengira password VNC legacy 8 karakter aktif** karena WFS sengaja tidak memaksakan autentikasi lemah semacam itu. Jika VNC meminta jenis autentikasi yang tidak didukung, menampilkan layar hitam, atau hanya view-only, layanan grafis belum memenuhi acceptance.
 
 ### C. Why mstsc, xrdp and noVNC are different
 
-\`mstsc\` menghubungi RDP (3389). macOS memakai Screen Sharing (5900) dan SSH (2222). **RDP Windows tidak dapat mengakses macOS VNC** tanpa jembatan protokol terpisah, dan tidak ada jembatan tersebut yang diklaim di sini.
+`mstsc` menghubungi RDP (3389). macOS memakai Screen Sharing (5900) dan SSH (2222). **RDP Windows tidak dapat mengakses macOS VNC** tanpa jembatan protokol terpisah, dan tidak ada jembatan tersebut yang diklaim di sini.
 
 ## 6. Applications
 
 Aplikasi asli macOS berbeda dari image Windows/Linux. File aplikasi dan CLI bisa dipasang; **jendela GUI aplikasi** tidak dianggap terbukti sebelum sesi grafis yang dapat dikendalikan terverifikasi.
 
 - **Safari** sudah disertakan di macOS, bukan dipasang ulang. Google Chrome boleh tersedia pada runner images; WFS tidak menambah Chrome kedua hanya untuk memenuhi logo browser. Kebijakan ekstensi Chrome di macOS memerlukan pengelolaan enterprise/MDM agar pemaksaan instalasi dapat diandalkan; opsi Cookie-Editor/GoFullPage tidak diklaim otomatis terpasang.
-- **VS Code** dipasang opsional dari Homebrew Cask dan harus ditemukan sebagai \`Visual Studio Code.app\`.
+- **VS Code** dipasang opsional dari Homebrew Cask dan harus ditemukan sebagai `Visual Studio Code.app`.
 - **Codex/Claude Code** dipasang melalui npm jika dipilih, lalu dicek executable-nya; akun API dan autentikasi tetap diatur sendiri.
 - **Xcode, Swift, clang, Python, Git, ffmpeg** hanya diinventarisasi jika bundle diminta. Versi dan ketersediaan tergantung runner image.
 - **MetaTrader WebTerminal** tersedia lewat browser di <https://web.metatrader.app/>. WebTerminal **bukan MetaTrader desktop** dan tidak menyediakan EA/script desktop. MT4/MT5 Windows tidak dipasang sebagai aplikasi macOS native.
@@ -140,9 +140,9 @@ Sumber: [Apple Software License Agreement for macOS Tahoe](https://www.apple.com
 
 | Symptom | Diagnose |
 |:--|:--|
-| Workflow fails before tailnet | Missing \`TAILSCALE_AUTH_KEY\` or \`RDP_PASSWORD\`, disabled hosted runner, unsupported runner label |
-| No SSH port 2222 | Check summary SSH status, \`tailscale ip -4\`, interface binding and tailnet ACLs; do not switch listener to public IP |
-| SSH password rejected | Verify exact Actions Summary user (case sensitive) and mode; do not assume username \`RDP\` on macOS |
+| Workflow fails before tailnet | Missing `TAILSCALE_AUTH_KEY` or `RDP_PASSWORD`, disabled hosted runner, unsupported runner label |
+| No SSH port 2222 | Check summary SSH status, `tailscale ip -4`, interface binding and tailnet ACLs; do not switch listener to public IP |
+| SSH password rejected | Verify exact Actions Summary user (case sensitive) and mode; do not assume username `RDP` on macOS |
 | VNC port open but black screen | macOS GUI is headless/no console login; Screen Sharing can't be made fully interactive by TCP test |
 | VNC view-only | Modern Apple Screen Sharing permission restrictions, not necessarily a workflow bug |
 | VNC viewer asks incompatible auth | Different native Apple ARD vs legacy VNC login; no legacy authentication forced |
@@ -150,7 +150,7 @@ Sumber: [Apple Software License Agreement for macOS Tahoe](https://www.apple.com
 | Tailscale connection fails | Key, tags, tailnet ACL, device approval and outbound connectivity |
 | Session ended early | GitHub job 360-minute cap includes setup, runner preemption, manual cancel, or billing/runner quota |
 
-**Acceptance levels:** \`SSH TCP_READY_AUTH_UNTESTED\` confirms a private socket, **not client authentication**. \`VNC PORT_OPEN_GUI_CONTROL_UNVERIFIED\` confirms only a listening port, **not a usable interactive macOS desktop**. Full acceptance requires the authorized user to connect from a second tailnet device, log in, open Finder and verify interaction. Avoid entering personal credentials until you trust the session.
+**Acceptance levels:** `SSH TCP_READY_AUTH_UNTESTED` confirms a private socket, **not client authentication**. `VNC PORT_OPEN_GUI_CONTROL_UNVERIFIED` confirms only a listening port, **not a usable interactive macOS desktop**. Full acceptance requires the authorized user to connect from a second tailnet device, log in, open Finder and verify interaction. Avoid entering personal credentials until you trust the session.
 
 ## 9. Verification and changes
 
