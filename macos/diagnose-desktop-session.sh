@@ -73,7 +73,9 @@ if screencapture -x "$tmp/screen.png" >/dev/null 2>&1 &&
     swift -e '
 import AppKit
 let imagePath = CommandLine.arguments.last!
-guard let bitmap = NSBitmapImageRep(contentsOfFile: imagePath),
+let input = try? Data(contentsOf: URL(fileURLWithPath: imagePath))
+guard let bytes = input,
+      let bitmap = NSBitmapImageRep(data: bytes),
       bitmap.pixelsWide > 0 && bitmap.pixelsHigh > 0 else {
   print("Pixel analysis not available")
   exit(0)
@@ -85,7 +87,7 @@ for row in 0..<grid {
   for column in 0..<grid {
     let x = column * (bitmap.pixelsWide - 1) / (grid - 1)
     let y = row * (bitmap.pixelsHigh - 1) / (grid - 1)
-    if let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) {
+    if let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(NSColorSpace.deviceRGB) {
       samples += 1
       if max(color.redComponent, color.greenComponent, color.blueComponent) < 0.06 {
         dark += 1
