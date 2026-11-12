@@ -335,10 +335,20 @@ summary() {
 keepalive() {
   local seconds=$((WFS_DURATION * 3600))
   if (( seconds > 20500 )); then seconds=20500; fi
+  # Only a shorter bounded duration may be used for native CI regression.
+  if test -n "${WFS_TEST_KEEPALIVE_SECONDS:-}"; then
+    [[ "$WFS_TEST_KEEPALIVE_SECONDS" =~ ^[1-9][0-9]?$ ]] &&
+      (( WFS_TEST_KEEPALIVE_SECONDS <= 10 )) ||
+      die "Invalid short Keep Alive regression duration."
+    seconds="$WFS_TEST_KEEPALIVE_SECONDS"
+  fi
   local until_ts=$(( $(date +%s) + seconds ))
   caffeinate -dimsu &
-  local coffee=$!
-  trap 'kill "$coffee" >/dev/null 2>&1 || true' EXIT
+  # The EXIT trap runs after the function's local variables are destroyed.
+  # Keep the PID at script scope, otherwise Bash nounset makes a successful
+  # completed session fail with 'coffee: unbound variable'.
+  WFS_CAFFEINATE_PID=$!
+  trap 'if [[ "${WFS_CAFFEINATE_PID:-}" =~ ^[0-9]+$ ]]; then kill "$WFS_CAFFEINATE_PID" >/dev/null 2>&1 || true; fi' EXIT
   local count=0
   say "Remote session heartbeat active (up to $seconds seconds, capped by 360-minute GitHub job)."
   while (( $(date +%s) < until_ts )); do
@@ -346,8 +356,10 @@ keepalive() {
     if (( count % 5 == 1 )); then
       say "Alive; remaining $(( (until_ts-$(date +%s))/60 )) min. GUI status=$WFS_MAC_VNC_STATUS."
     fi
-    sleep 60
+    if test -n "${WFS_TEST_KEEPALIVE_SECONDS:-}"; then sleep 1; else sleep 60; fi
   done
+  say "Configured session duration completed normally. Exiting successfully."
+  return 0
 }
 cleanup() {
   if test -s "$state/gui-preview.pid"; then
