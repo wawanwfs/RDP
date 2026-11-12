@@ -116,7 +116,7 @@ def launch(args: argparse.Namespace) -> None:
     keycombo = tk.StringVar(value="cmd+tab")
     keybox = ttk.Combobox(
         tools, textvariable=keycombo, width=17, state="readonly",
-        values=["cmd+tab", "cmd+space", "escape", "return", "tab", "backspace", "ctrl+c"]
+        values=["cmd+tab", "cmd+space", "cmd+c", "escape", "return", "tab", "backspace"]
     )
     keybox.pack(side="left", padx=5)
     ttk.Button(tools, text="Send key", command=lambda: enqueue("key", keycombo.get())).pack(side="left", padx=5)
