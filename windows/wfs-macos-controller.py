@@ -15,6 +15,7 @@ import math
 import queue
 import struct
 import threading
+import time
 import urllib.error
 import urllib.request
 
@@ -47,6 +48,11 @@ def map_click(
     x = min(framebuffer_width - 1, (px * framebuffer_width) // image_width)
     y = min(framebuffer_height - 1, (py * framebuffer_height) // image_height)
     return x, y
+
+
+def should_refresh_vnc(kind: str, source: str, enabled: bool) -> bool:
+    """An input action can be visually checked without a second client login."""
+    return bool(enabled and source == "vnc" and kind in ("click", "key", "text"))
 
 
 def png_dimensions(image: bytes) -> tuple[int, int]:
@@ -103,6 +109,7 @@ def launch(args: argparse.Namespace) -> None:
     events: queue.Queue[tuple] = queue.Queue()
     answers: queue.Queue[tuple] = queue.Queue()
     stop = threading.Event()
+    auto_refresh = tk.BooleanVar(value=True)
     state = {
         "width": 0, "height": 0, "fb_width": 0, "fb_height": 0,
         "factor": 1, "connected": False, "connecting": False, "preview_ok": False, "source": ""
@@ -134,6 +141,12 @@ def launch(args: argparse.Namespace) -> None:
     input_text = tk.StringVar()
     ttk.Entry(tools, textvariable=input_text, width=36, show="").pack(side="left", padx=(18, 4))
     ttk.Button(tools, text="Type text", command=lambda: enqueue("text", input_text.get())).pack(side="left")
+    feedback = ttk.Frame(root, padding=(12, 2, 12, 5))
+    feedback.pack(fill="x")
+    ttk.Checkbutton(
+        feedback, text="Auto-refresh Apple VNC after click/key (only in Apple VNC view)",
+        variable=auto_refresh,
+    ).pack(side="left")
     note = tk.StringVar(value="No input is sent until Connect succeeds and you click/choose an action. "
                                      "A VNC SetMode request is not proof that macOS accepts input.")
     ttk.Label(root, textvariable=note, wraplength=1040, padding=9).pack(fill="x")
@@ -145,10 +158,22 @@ def launch(args: argparse.Namespace) -> None:
         if kind == "text" and (len(values[0]) > 256 or "\n" in values[0]):
             status.set("Text entry is limited to 256 characters and no newlines.")
             return
-        events.put((kind, *values))
+        # The separate private preview is a cached read-only image. Never
+        # silently replace it with another VNC framebuffer (possibly black).
+        refresh = should_refresh_vnc(kind, state["source"], auto_refresh.get())
+        if kind in ("click", "key", "text"):
+            events.put((kind, *values, refresh))
+        else:
+            events.put((kind, *values))
         if kind == "text":
             input_text.set("")
-        status.set("VNC input queued; click Capture one frame to verify it was applied.")
+        if refresh:
+            status.set("VNC input queued. Refreshing the SAME Apple VNC frame after input…")
+        elif kind in ("click", "key", "text"):
+            status.set("VNC input queued. Current image is static; use Capture Apple VNC "
+                       "or wait for the private preview cache.")
+        else:
+            status.set("Requesting screenshot…")
 
     def on_click(event) -> None:
         if not state["connected"] or not state["preview_ok"]:
@@ -194,6 +219,11 @@ def launch(args: argparse.Namespace) -> None:
                             if action[1]:
                                 client.type(action[1])
                                 answers.put(("sent", "Text event transmitted; verify on screen."))
+                        if kind in ("click", "key", "text") and action[-1]:
+                            # Screen changes are asynchronous. Capture the same
+                            # Apple VNC session, never the unrelated cached preview.
+                            time.sleep(0.6)
+                            answers.put(("frame", "vnc", client.screenshot()))
                     except Exception as exc:
                         answers.put(("error", type(exc).__name__ + ": " + str(exc)))
         except Exception as exc:
@@ -261,12 +291,13 @@ def launch(args: argparse.Namespace) -> None:
                     label = "Apple VNC" if source == "vnc" else "Private preview"
                     status.set(f"{label} frame {width}×{height}; click to send one VNC event.")
                     if source == "vnc":
-                        note.set("Image and input share one authenticated Apple VNC session. "
-                                 "If black while Private preview works, VNC does not see that GUI. "
-                                 "Sent input is NOT evidence of control.")
+                        note.set("Image and input share one Apple VNC session. When auto-refresh is checked, "
+                                 "this frame updates after clicks/keys. If it stays unchanged, "
+                                 "macOS might be in VIEW-ONLY mode; sending is not proof of control.")
                     else:
-                        note.set("Private preview can show a DIFFERENT macOS GUI session than Apple VNC. "
-                                 "Images may be cached for 60 seconds. Compare using Capture Apple VNC.")
+                        note.set("Private preview is STATIC and may come from a different GUI session. "
+                                 "It can be cached for 60 seconds. Input is sent through Apple VNC, "
+                                 "NOT through this image. Compare with Capture Apple VNC.")
                 elif item[0] == "sent":
                     status.set(item[1])
                 elif item[0] == "error":
