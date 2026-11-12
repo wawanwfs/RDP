@@ -297,6 +297,12 @@ bash "$HOME/.wfs-preview/launch-preview-ssh.sh" --stop
 
 This approach follows from the user's observations: `screencapture` under `wfsremote` returned a 1024×768 image with only 2% near-black samples while TigerVNC showed a fully black framebuffer. The two capture paths therefore need independent acceptance. The underlying Apple VNC limitation persists until a fully controllable Aqua session is established and authorized.
 
+### Option A input experiment — Apple VNC control on Windows
+
+[WFS Windows Apple VNC Controller](WINDOWS_CONTROL.md) is now available as a separate Windows GUI. It combines the real PNG screenshot at Tailscale port 6081 with Apple's RFB authentication on port 5900. Unlike a generic VNC viewer, its **optional** Apple-specific protocol client requests `SetMode(control)`. The application maps a user-click on the screenshot to one VNC pointer event and can send a user-selected key. It **does not bypass** macOS TCC, Aqua login, or Remote Management restrictions.
+
+**This is an input candidate, not a verified fix yet.** Prove it by clicking an innocuous Finder icon and manually refreshing the screenshot after the 60-second cooldown. If Finder visibly responds, mouse control is accepted on the hosted Mac. If not, keep SSH as your reliable control path and inspect the macOS authorization/session status. The third-party Apple VNC dependency is explicitly opt-in and pinned to a reviewed upstream commit; see [installation and security details](WINDOWS_CONTROL.md).
+
 ## 8. Troubleshooting and acceptance gates
 
 | Symptom | Diagnose |
