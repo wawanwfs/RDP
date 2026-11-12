@@ -68,4 +68,25 @@ if launchctl print system/com.apple.screensharing >/dev/null 2>&1; then
 else
   echo "Apple Screen Sharing launchd service: absent/unreadable"
 fi
+echo "== Recent Apple Screen Sharing input-denial counters (best effort) =="
+if command -v log >/dev/null 2>&1; then
+  # These specific messages do not include keystrokes; print counts only.
+  # macOS unified log privacy policy may redact or omit relevant entries.
+  tmp="$(mktemp -t wfs-vnc-denials)"
+  trap 'rm -f "$tmp"' EXIT
+  if /usr/bin/log show --last 3m --style compact --info \
+      --predicate '(process == "screensharingd" OR process == "ScreensharingAgent") AND (eventMessage CONTAINS[c] "not allowed to post key" OR eventMessage CONTAINS[c] "ignore key event")' \
+      >"$tmp" 2>/dev/null; then
+    count="$(grep -Eic 'not allowed to post key|ignore key event' "$tmp" || true)"
+    echo "Recent key-denial or guard events: ${count:-0} (not a definitive authorization check)"
+  else
+    echo "Screen Sharing log access unavailable (not proof of accepted input)."
+  fi
+else
+  echo "macOS unified logging tool unavailable."
+fi
+echo "== macOS permission boundary =="
+echo "Apple: Remote Management activated via kickstart may be view-only on macOS 10.14+."
+echo "Apple: Screen Sharing cannot be enabled via kickstart on macOS 12.1+."
+echo "Read: https://support.apple.com/en-me/guide/remote-desktop/apd8b1c65bd/mac"
 echo "SSH unaffected. No password was requested or logged."

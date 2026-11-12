@@ -44,6 +44,14 @@ class ControllerTests(unittest.TestCase):
             with self.subTest(bad=bad[:24]), self.assertRaises(ValueError):
                 mod.png_dimensions(bad)
 
+    def test_automatic_refresh_is_only_for_same_vnc_session(self):
+        for kind in ("click", "key", "text"):
+            self.assertTrue(mod.should_refresh_vnc(kind, "vnc", True))
+            self.assertFalse(mod.should_refresh_vnc(kind, "preview", True))
+            self.assertFalse(mod.should_refresh_vnc(kind, "vnc", False))
+        for kind in ("frame", "vnc_frame", "quit"):
+            self.assertFalse(mod.should_refresh_vnc(kind, "vnc", True))
+
     def test_invalid_geometry(self):
         with self.assertRaises(ValueError):
             mod.map_click(10, 20, 0, 1024, 768, 1024, 768)

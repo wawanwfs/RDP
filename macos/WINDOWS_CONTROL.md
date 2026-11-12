@@ -40,9 +40,9 @@ $Python = (Resolve-Path .\.wfs-macos-venv\Scripts\python.exe).Path
 1. Click **Connect**. Enter the macOS login password for wfsremote. The tool requests Apple type-30 authentication and SetMode(control); macOS could still reject control.
 2. Say whether port 6081 uses the same password. If preview was started manually from SSH and has a separate password, select **No** and provide that browser-only password.
 3. Click **Capture one frame**. The image appears in the Windows controller with coordinates scaled to the macOS VNC framebuffer.
-4. Click **Capture Apple VNC** to fetch a screenshot directly from the same authenticated VNC session used for input. If this image shows a usable desktop, prefer it for pixel-aligned clicks. If it is black while the separate preview shows Finder, VNC is not viewing the same usable desktop.
-5. Click a harmless item such as **Finder** in the Dock in the usable image to send one explicit VNC click.
-6. Capture again and verify a visible change. For **Capture one frame** (private preview), wait at least 60 seconds before recapturing because its screenshot may be cached.
+4. Click **Capture Apple VNC** to request an image from the same authenticated VNC session that carries input. If its framebuffer shows a usable desktop, leave that image selected. The new **Auto-refresh Apple VNC after click/key** option is on by default.
+5. Click a harmless item such as **Finder** in the Dock or send **cmd+tab**. In Apple VNC view, the controller automatically fetches another frame after the input and shows whether anything visibly changed. A refreshed image is not proof of authorized input unless the requested desktop change appears.
+6. If **Capture Apple VNC** is black but **Capture one frame** shows Finder, the private browser preview and Apple VNC are not equivalent. The private preview is a **static screenshot**, potentially cached for 60 seconds; its visible UI **does not imply that the VNC channel can control it**. After at least 60 seconds, you can recapture and compare, but a lack of control usually points to authorization/GUI-session limits.
 
 **Accept success only when the Finder click causes a visible change.** A connected VNC socket, mouse pointer, or status 'event sent' alone is not sufficient.
 
@@ -58,3 +58,24 @@ $Python = (Resolve-Path .\.wfs-macos-venv\Scripts\python.exe).Path
 - This is not yet a fully smooth RDP replacement. Private-preview PNG capture can be cached for 60 seconds; Apple VNC capture is manual but is not limited by the private-preview cache.
 
 On auth error, collect the Windows controller status, the current Mac console account, and Apple Screen Sharing diagnostic logs. See [macOS README](README.md).
+
+## When the screenshot is visible but input is ignored
+
+The known GitHub Actions setup starts Screen Sharing using `macos/workspace.sh` → `kickstart`. This is a significant policy limitation, **not a missing Python click handler**. Apple's documentation explicitly says remote management enabled by this method on modern macOS may grant **view-only**. A Python/VNC client cannot grant macOS permission by itself.
+
+For read-only diagnostics from the **existing macOS SSH connection**, run:
+
+```bash
+curl -fsSLo /tmp/wfs-diagnose-vnc.sh https://raw.githubusercontent.com/wawanwfs/RDP/main/macos/diagnose-vnc.sh
+bash /tmp/wfs-diagnose-vnc.sh wfsremote
+```
+
+The script reports the console account, RFB security negotiation, Remote Management privilege attributes, and summarized recent Screen Sharing key-denial messages. **No password is needed for diagnostics.** A zero denial count does not prove permission: macOS may not log every blocked click.
+
+If both Apple VNC screenshots and previews show Finder, but a `cmd+tab` or Finder click does not change the VNC framebuffer, consider control **not verified / likely view-only**. Do not repeatedly change SIP, TCC databases, or run privileged input-injection scripts: they cannot replace user approval.
+
+### What can actually enable interactive control?
+
+- On a Mac you own with access to its authorized local graphical session: use **System Settings → General → Sharing**, explicitly configure Screen Sharing or Remote Management for the designated account and its control rights. Restart the connection.
+- On an organization-managed Mac: use the approved **MDM Enable Remote Desktop** configuration granting the appropriate user rights.
+- On a short-lived **GitHub-hosted macOS runner**, neither interactive system-setting approval nor MDM enrollment is generally available through the workflow. Interactive control is therefore **not guaranteed and may be impossible with Option A**. SSH/CLI and read-only screen preview remain workable without misrepresenting them as interactive desktop access.
