@@ -13,6 +13,7 @@ import base64
 import ipaddress
 import math
 import queue
+import struct
 import threading
 import urllib.error
 import urllib.request
@@ -46,6 +47,17 @@ def map_click(
     x = min(framebuffer_width - 1, (px * framebuffer_width) // image_width)
     y = min(framebuffer_height - 1, (py * framebuffer_height) // image_height)
     return x, y
+
+
+def png_dimensions(image: bytes) -> tuple[int, int]:
+    """Validate dimensions of a received screenshot before decoding it in Tk."""
+    if (len(image) < 24 or image[:8] != bytes((137, 80, 78, 71, 13, 10, 26, 10))
+            or image[12:16] != b"IHDR"):
+        raise ValueError("Missing PNG signature/IHDR.")
+    width, height = struct.unpack(">II", image[16:24])
+    if not (1 <= width <= 8192 and 1 <= height <= 8192 and width * height <= 20_000_000):
+        raise ValueError("Unsafe PNG framebuffer dimensions.")
+    return width, height
 
 
 def fetch_frame(ip: str, username: str, password: str, port: int) -> bytes:
@@ -88,13 +100,12 @@ def launch(args: argparse.Namespace) -> None:
     root.geometry("1080x790")
     root.configure(bg="#111725")
 
-    creds: dict[str, str] = {}
     events: queue.Queue[tuple] = queue.Queue()
     answers: queue.Queue[tuple] = queue.Queue()
     stop = threading.Event()
     state = {
         "width": 0, "height": 0, "fb_width": 0, "fb_height": 0,
-        "factor": 1, "connected": False, "preview_ok": False
+        "factor": 1, "connected": False, "connecting": False, "preview_ok": False, "source": ""
     }
 
     bar = ttk.Frame(root, padding=10)
@@ -169,7 +180,10 @@ def launch(args: argparse.Namespace) -> None:
                             return
                         if kind == "frame":
                             image = fetch_frame(args.ip, args.user, preview_password, args.preview_port)
-                            answers.put(("frame", image))
+                            answers.put(("frame", "preview", image))
+                        elif kind == "vnc_frame":
+                            # Same RFB connection as click/key input: diagnose session split.
+                            answers.put(("frame", "vnc", client.screenshot()))
                         elif kind == "click":
                             client.click(action[1], action[2])
                             answers.put(("sent", "Click event transmitted, not yet verified by macOS."))
@@ -186,7 +200,7 @@ def launch(args: argparse.Namespace) -> None:
             answers.put(("disconnected", type(exc).__name__ + ": " + str(exc)))
 
     def connect():
-        if state["connected"]:
+        if state["connected"] or state["connecting"]:
             return
         pwd = simpledialog.askstring("Apple VNC", f"macOS password for {args.user}:", show="*", parent=root)
         if not pwd:
@@ -201,8 +215,7 @@ def launch(args: argparse.Namespace) -> None:
             vpwd = simpledialog.askstring("Private Preview", "Browser preview password:", show="*", parent=root)
             if not vpwd:
                 return
-        creds["mac"] = pwd
-        creds["preview"] = vpwd
+        state["connecting"] = True
         status.set("Connecting via Apple RFB security type 30; requesting control mode…")
         threading.Thread(target=background, args=(pwd, vpwd), daemon=True).start()
 
@@ -211,38 +224,58 @@ def launch(args: argparse.Namespace) -> None:
 
     ttk.Button(bar, text="Connect", command=connect).pack(side="right", padx=6)
     ttk.Button(bar, text="Capture one frame", command=capture).pack(side="right")
+    ttk.Button(bar, text="Capture Apple VNC", command=lambda: enqueue("vnc_frame")).pack(side="right", padx=6)
 
     def poll():
         try:
             while True:
                 item = answers.get_nowait()
                 if item[0] == "connected":
+                    state["connecting"] = False
                     state["connected"] = True
                     state["fb_width"], state["fb_height"] = item[1:3]
                     status.set(f"Apple VNC authenticated ({item[1]}×{item[2]}). "
                                "Control requested; verify with a safe click.")
                 elif item[0] == "frame":
-                    # PhotoImage accepts PNG bytes in Tk 8.6+; no Pillow needed.
-                    photo = tk.PhotoImage(data=base64.b64encode(item[1]).decode("ascii"), format="png")
-                    state["width"], state["height"] = photo.width(), photo.height()
-                    state["factor"] = display_factor(photo.width(), photo.height())
-                    display = photo.subsample(state["factor"], state["factor"])
+                    source, payload = item[1:3]
+                    try:
+                        width, height = png_dimensions(payload)
+                        if source == "vnc" and (width, height) != (state["fb_width"], state["fb_height"]):
+                            raise ValueError("VNC framebuffer dimensions changed: reconnect before clicking.")
+                        photo = tk.PhotoImage(data=base64.b64encode(payload).decode("ascii"), format="png")
+                        if (photo.width(), photo.height()) != (width, height):
+                            raise ValueError("Unexpected decoded PNG dimensions.")
+                        factor = display_factor(width, height)
+                        display = photo.subsample(factor, factor)
+                    except (ValueError, tk.TclError) as exc:
+                        status.set("Invalid frame: " + str(exc))
+                        continue
+                    state["width"], state["height"] = width, height
+                    state["factor"] = factor
+                    state["source"] = source
                     canvas.configure(width=display.width(), height=display.height())
                     canvas.delete("all")
                     canvas.create_image(0, 0, image=display, anchor="nw")
                     canvas.photo = display
                     state["preview_ok"] = True
-                    status.set(f"Preview frame {state['width']}×{state['height']}; "
-                               "click image to send one Apple VNC control event.")
-                    note.set("Preview is manually refreshed, limited to one new macOS screenshot per 60 seconds. "
-                             "Check visible changes after clicks to confirm control. No input bypass is attempted.")
+                    label = "Apple VNC" if source == "vnc" else "Private preview"
+                    status.set(f"{label} frame {width}×{height}; click to send one VNC event.")
+                    if source == "vnc":
+                        note.set("Image and input share one authenticated Apple VNC session. "
+                                 "If black while Private preview works, VNC does not see that GUI. "
+                                 "Sent input is NOT evidence of control.")
+                    else:
+                        note.set("Private preview can show a DIFFERENT macOS GUI session than Apple VNC. "
+                                 "Images may be cached for 60 seconds. Compare using Capture Apple VNC.")
                 elif item[0] == "sent":
                     status.set(item[1])
                 elif item[0] == "error":
                     status.set("Operation error: " + item[1])
                 elif item[0] == "disconnected":
                     state["connected"] = False
+                    state["connecting"] = False
                     state["preview_ok"] = False
+                    state["source"] = ""
                     status.set("Apple VNC disconnected: " + item[1])
         except queue.Empty:
             pass
