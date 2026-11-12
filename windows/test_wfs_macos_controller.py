@@ -1,6 +1,7 @@
 """Safe, network-free tests for coordinate mapping and tailnet-only policy."""
 import importlib.util
 from pathlib import Path
+import struct
 import unittest
 
 ROOT = Path(__file__).with_name("wfs-macos-controller.py")
@@ -32,6 +33,16 @@ class ControllerTests(unittest.TestCase):
     def test_click_mapping_retina_scaling(self):
         # Preview PNG may be half the pixel dimensions of RFB framebuffer.
         self.assertEqual(mod.map_click(100, 50, 2, 1024, 768, 2048, 1536), (400, 200))
+
+    def test_png_geometry(self):
+        prefix = bytes((137, 80, 78, 71, 13, 10, 26, 10)) + struct.pack(">I", 13) + b"IHDR"
+        valid = prefix + struct.pack(">II", 2048, 1536) + bytes((8, 2, 0, 0, 0))
+        self.assertEqual(mod.png_dimensions(valid), (2048, 1536))
+        self.assertEqual(mod.map_click(100, 50, 2, 2048, 1536, 2048, 1536), (200, 100))
+        for bad in (b"not a png", prefix, prefix + struct.pack(">II", 0, 100),
+                    prefix + struct.pack(">II", 8192, 8192), prefix + struct.pack(">II", 9999, 800)):
+            with self.subTest(bad=bad[:24]), self.assertRaises(ValueError):
+                mod.png_dimensions(bad)
 
     def test_invalid_geometry(self):
         with self.assertRaises(ValueError):
