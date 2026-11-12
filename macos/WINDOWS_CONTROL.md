@@ -40,10 +40,13 @@ $Python = (Resolve-Path .\.wfs-macos-venv\Scripts\python.exe).Path
 1. Click **Connect**. Enter the macOS login password for wfsremote. The tool requests Apple type-30 authentication and SetMode(control); macOS could still reject control.
 2. Say whether port 6081 uses the same password. If preview was started manually from SSH and has a separate password, select **No** and provide that browser-only password.
 3. Click **Capture one frame**. The image appears in the Windows controller with coordinates scaled to the macOS VNC framebuffer.
-4. Click only a harmless icon, such as **Finder** in the Dock, in that displayed image. The app sends a single explicit VNC click.
-5. After 60 seconds, click **Capture one frame** again. Check whether Finder visibly changed. The preview caches one new capture per minute to avoid repeated macOS Screen Recording dialogs.
+4. Click **Capture Apple VNC** to fetch a screenshot directly from the same authenticated VNC session used for input. If this image shows a usable desktop, prefer it for pixel-aligned clicks. If it is black while the separate preview shows Finder, VNC is not viewing the same usable desktop.
+5. Click a harmless item such as **Finder** in the Dock in the usable image to send one explicit VNC click.
+6. Capture again and verify a visible change. For **Capture one frame** (private preview), wait at least 60 seconds before recapturing because its screenshot may be cached.
 
 **Accept success only when the Finder click causes a visible change.** A connected VNC socket, mouse pointer, or status 'event sent' alone is not sufficient.
+
+**Apple policy limitation:** [Apple's Remote Desktop documentation](https://support.apple.com/en-me/guide/remote-desktop/apd8b1c65bd/mac) explains that Remote Management enabled by `kickstart` on macOS 10.14+ can result in **view-only** Screen Sharing. On macOS 12.1+, `kickstart` cannot enable Screen Sharing. Sending Apple `SetMode(control)` cannot override macOS consent or management policy. Without interactive GUI authorization or approved MDM on a Mac, a GitHub-hosted ephemeral runner might remain view-only. Do not attempt SIP/TCC bypasses.
 
 ## Security and limitations
 
@@ -52,6 +55,6 @@ $Python = (Resolve-Path .\.wfs-macos-venv\Scripts\python.exe).Path
 - The separate Type text control is unmasked; do not enter private passwords in that field.
 - The program refuses HTTP redirects from the preview to avoid forwarding Basic credentials.
 - macOS authorization/GUI session restrictions still apply. Neither SetMode nor this tool bypasses Apple privacy permissions.
-- This is not yet a fully smooth RDP replacement. PNG capture is manual and limited to one new frame per minute.
+- This is not yet a fully smooth RDP replacement. Private-preview PNG capture can be cached for 60 seconds; Apple VNC capture is manual but is not limited by the private-preview cache.
 
 On auth error, collect the Windows controller status, the current Mac console account, and Apple Screen Sharing diagnostic logs. See [macOS README](README.md).

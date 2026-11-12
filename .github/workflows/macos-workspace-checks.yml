@@ -4,11 +4,15 @@ on:
     branches: [main]
     paths:
       - "macos/**"
+      - "windows/wfs-macos-controller.py"
+      - "windows/test_wfs_macos_controller.py"
       - ".github/workflows/macos-remote-workspace.yml"
       - ".github/workflows/macos-workspace-checks.yml"
   pull_request:
     paths:
       - "macos/**"
+      - "windows/wfs-macos-controller.py"
+      - "windows/test_wfs_macos_controller.py"
       - ".github/workflows/macos-remote-workspace.yml"
       - ".github/workflows/macos-workspace-checks.yml"
   workflow_dispatch:
@@ -92,6 +96,9 @@ jobs:
           controller = pathlib.Path("windows/wfs-macos-controller.py").read_text(encoding="utf-8")
           assert "macvnc.connect" in controller
           assert "map_click" in controller
+          assert "client.screenshot()" in controller
+          assert "png_dimensions" in controller
+          assert 'answers.put(("frame", "vnc", client.screenshot()))' in controller
           assert "100.64.0.0/10" in controller
           assert "NoRedirect" in controller
           assert "import macvnc" in controller
