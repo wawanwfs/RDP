@@ -44,6 +44,9 @@ jobs:
           assert parsed["jobs"]["macos-workspace"]["timeout-minutes"] == "360"
           script = pathlib.Path("macos/workspace.sh").read_text(encoding="utf-8")
           assert "RFB_READY_GUI_CONTROL_UNVERIFIED" in script
+          assert "WFS_CAFFEINATE_PID" in script
+          assert "Configured session duration completed normally." in script
+          assert "WFS_TEST_KEEPALIVE_SECONDS" in script
           assert "Not an RFB endpoint" in script
           assert "VNC-only mode unavailable" in script
           assert "Both mode" not in script or "WFS_MAC_SSH_STATUS" in script
@@ -238,6 +241,16 @@ jobs:
       - name: "🖼️ Verify private macOS screenshot viewer on localhost"
         timeout-minutes: 3
         run: bash macos/test-gui-preview.sh
+      - name: "🕒 Regression: normal Keep Alive expiry succeeds and cleans caffeinate"
+        timeout-minutes: 2
+        env:
+          WFS_DURATION: "1"
+          WFS_MAC_VNC_STATUS: SKIPPED
+          WFS_TEST_KEEPALIVE_SECONDS: "2"
+        run: |
+          set -euo pipefail
+          bash macos/workspace.sh keepalive
+          echo "PASS: normal session end does not trigger EXIT trap unbound variable." >> "$GITHUB_STEP_SUMMARY"
       - name: "🧹 Always clean up localhost SSH smoke"
         if: always()
         run: bash macos/workspace.sh cleanup
