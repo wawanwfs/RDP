@@ -2,489 +2,189 @@
 
 # 🖥️ WFS Remote Workspaces
 
-**Windows · Linux · macOS · Private Remote Access · Tailscale · GitHub Actions**
+**Workspace Windows, Linux, dan macOS sementara lewat GitHub Actions.**  
+Pilih sistem operasi dan aplikasi, lalu masuk dari perangkat Anda melalui jaringan privat Tailscale.
 
-**Deploy a temporary cloud desktop, choose the apps you need, connect privately, and keep the runner alive for the active session.**
+[![Windows · RDP & noVNC](https://img.shields.io/badge/Windows-RDP%20%2B%20noVNC-1769E0?style=for-the-badge)](https://github.com/wawanwfs/RDP/actions/workflows/windows-remote-workspace-with-apps.yml)
+[![Linux · XRDP & Selkies](https://img.shields.io/badge/Linux-XRDP%20%2B%20Selkies-147D64?style=for-the-badge&logo=linux&logoColor=white)](https://github.com/wawanwfs/RDP/actions/workflows/linux-remote-workspace.yml)
+[![macOS · SSH & Preview](https://img.shields.io/badge/macOS-SSH%20%2B%20Preview-5C4CD8?style=for-the-badge&logo=apple&logoColor=white)](https://github.com/wawanwfs/RDP/actions/workflows/macos-remote-workspace.yml)
 
-[![Windows Workflow](https://img.shields.io/github/actions/workflow/status/wawanwfs/RDP/windows-remote-workspace-with-apps.yml?branch=main&style=for-the-badge&logo=windows&label=Windows)](https://github.com/wawanwfs/RDP/actions/workflows/windows-remote-workspace-with-apps.yml)
-[![Windows CI](https://img.shields.io/github/actions/workflow/status/wawanwfs/RDP/windows-workspace-checks.yml?branch=main&style=for-the-badge&logo=windows&label=Windows%20CI)](https://github.com/wawanwfs/RDP/actions/workflows/windows-workspace-checks.yml)
-[![Linux CI](https://img.shields.io/github/actions/workflow/status/wawanwfs/RDP/linux-workspace-checks.yml?branch=main&style=for-the-badge&logo=linux&label=Linux%20CI)](https://github.com/wawanwfs/RDP/actions/workflows/linux-workspace-checks.yml)
-[![macOS CI](https://img.shields.io/github/actions/workflow/status/wawanwfs/RDP/macos-workspace-checks.yml?branch=main&style=for-the-badge&logo=apple&label=macOS%20CI)](https://github.com/wawanwfs/RDP/actions/workflows/macos-workspace-checks.yml)
-[![Remote](https://img.shields.io/badge/Remote-RDP%20%7C%20XRDP%20%7C%20SSH%20%7C%20VNC-735DE2?style=for-the-badge)](https://github.com/wawanwfs/RDP/actions)
-[![Tailscale](https://img.shields.io/badge/Network-Tailscale%20Private-242424?style=for-the-badge)](https://tailscale.com/)
-
-### ▶️ Choose your remote environment
-
-| 🪟 Windows | 🐧 Linux | 🍎 macOS |
-|:---:|:---:|:---:|
-| [**▶ Launch Windows**](https://github.com/wawanwfs/RDP/actions/workflows/windows-remote-workspace-with-apps.yml) | [**▶ Launch Linux**](https://github.com/wawanwfs/RDP/actions/workflows/linux-remote-workspace.yml) | [**▶ Launch macOS**](https://github.com/wawanwfs/RDP/actions/workflows/macos-remote-workspace.yml) |
-| Windows 2025 | Ubuntu + KDE Plasma | Apple-backed macOS 15 / 26 |
-| RDP / noVNC | XRDP / Webtop | SSH + experimental Apple VNC |
-| Native Win32 apps | Native Linux apps + Wine | Native macOS tooling |
-| [Windows guide ↓](#-windows-remote-workspace) | [Linux guide](linux/README.md) | [**macOS guide**](macos/README.md) |
-
-[**All workflow runs**](https://github.com/wawanwfs/RDP/actions) · [**Repository secrets**](https://github.com/wawanwfs/RDP/settings/secrets/actions) · [**Acceptance matrix**](docs/ACCEPTANCE_MATRIX.md) · [**Linux verification**](https://github.com/wawanwfs/RDP/actions/workflows/linux-workspace-checks.yml) · [**macOS verification**](https://github.com/wawanwfs/RDP/actions/workflows/macos-workspace-checks.yml)
+[**Mulai cepat**](#mulai-cepat) · [**Aplikasi**](#aplikasi-opsional) · [**Troubleshooting**](#troubleshooting) · [**Semua run**](https://github.com/wawanwfs/RDP/actions)
 
 </div>
 
----
+## Pilih workspace
 
-## 🧭 Overview
-
-WFS Remote Workspaces menyediakan **tiga workflow utama** yang dikelola dalam satu repository: **Windows, Linux, dan macOS native**. Workflow lama lain masih tersedia di `.github/workflows/` sebagai varian/legacy; gunakan tiga titik masuk resmi di tabel berikut untuk deployment dan pengujian.
-
-| Aspek | 🪟 Windows | 🐧 Linux | 🍎 macOS |
-|:--|:--|:--|:--|
-| Main workflow | [Windows](.github/workflows/windows-remote-workspace-with-apps.yml) | [Linux](.github/workflows/linux-remote-workspace.yml) | [macOS](.github/workflows/macos-remote-workspace.yml) |
-| Host | GitHub Windows runner | Ubuntu runner + LinuxServer Webtop | **Genuine GitHub Apple macOS runner** |
-| Default desktop | Windows | Ubuntu KDE Plasma | macOS 15 / Apple Silicon |
-| Access method | **RDP** | **XRDP** | **SSH** + experimental Apple Screen Sharing |
-| Browser remote | noVNC option | Selkies Webtop option | **Private screenshot browser preview :6081 (READ-ONLY)**; interactive VNC still experimental |
-| User default | `RDP` | `RDP` | **`wfsremote`** (isolated non-admin user, independent of `runner`) |
-| Tailscale hostname | `rdp-runner` | `rdp-runner` | `rdp-runner` |
-| Primary remote port | TCP `3389` | TCP `3389` | SSH `2222`, VNC `5900`, optional private view `6081` |
-| Session choice | 1 / 3 / 6 h | 1 / 3 / 6 h | 1 / 3 / 6 h (default **1h** to limit macOS usage cost) |
-| Job cap | 360 min total | 360 min total | 360 min total |
-| Storage | Ephemeral | Ephemeral | Ephemeral |
-| MetaTrader | Native Windows MT4/MT5 | Wine; MT5 GUI compatibility limited | WebTerminal only; no desktop EA |
-| CI | [Windows tests](.github/workflows/windows-workspace-checks.yml) | [Linux tests](.github/workflows/linux-workspace-checks.yml) | [Native macOS tests](.github/workflows/macos-workspace-checks.yml) |
+| Kebutuhan | Pilihan awal | Akses | Jalankan |
+| --- | --- | --- | --- |
+| Aplikasi Windows native, pengujian UI, atau MetaTrader desktop | **Windows 2025** | RDP atau noVNC interaktif | [Run Windows](https://github.com/wawanwfs/RDP/actions/workflows/windows-remote-workspace-with-apps.yml) |
+| Desktop Linux untuk pengembangan dan pengujian lintas distro | **Ubuntu + KDE Plasma** | XRDP atau Selkies di browser | [Run Linux](https://github.com/wawanwfs/RDP/actions/workflows/linux-remote-workspace.yml) |
+| Shell dan tooling macOS native di Apple Silicon atau Intel | **macOS 15** | SSH, preview screenshot, dan Apple VNC eksperimental | [Run macOS](https://github.com/wawanwfs/RDP/actions/workflows/macos-remote-workspace.yml) |
 
 > [!IMPORTANT]
-> **Runner GitHub bukan VPS permanen.** Ketika job berakhir/dibatalkan, desktop, aplikasi, dan file lokal sementara akan hilang. Jangan menyimpan satu-satunya salinan data, bot, profil browser, akun, atau Expert Advisor di runner. **Jangan gunakan workflow ini untuk trading live tanpa backup dan pengawasan.**
+> **Ingin desktop yang bisa diklik?** Gunakan Windows atau Linux. Di macOS, SSH dan screenshot adalah jalur terpisah. Finder dan Dock dapat terlihat di preview meskipun Apple VNC tetap hitam atau tidak menerima input. Kendali mouse dan keyboard macOS belum terverifikasi.
 
-## 🧩 Architecture
+## Mulai cepat
 
-```text
-                       YOUR DEVICE
-        Windows / Android / macOS / Linux
-               connected to Tailscale
-                          │
-                PRIVATE TAILNET
-                          │
-       ┌──────────────────┼─────────────────┐
-       │                  │                 │
-  WINDOWS RDP         LINUX XRDP       macOS NATIVE
-  Windows runner      Docker Webtop     Apple macOS runner
-  :3389 RDP           :3389 XRDP        :2222 SSH
-  noVNC optional      Selkies optional  :5900 Screen Sharing*
-  native MT4/MT5      Chromium KDE      Safari + CLI tooling
-  Windows apps        Wine terminal     WebTerminal browser
-       │                  │                 │
-       └──────────────────┴─────────────────┘
-               GitHub Actions job
-            temporary, maximum 360 min
-```
+1. **Siapkan repository.** Gunakan repo ini jika Anda punya akses tulis, atau fork ke akun sendiri. Jika memakai fork, jalankan Actions dan buat Secrets di **fork tersebut**, bukan di repo sumber. Aktifkan Actions pada fork jika diminta.
+2. **Siapkan jaringan.** Instal Tailscale pada PC atau perangkat yang akan dipakai untuk remote. Hubungkan klien ke tailnet yang sama dengan auth key yang dipakai runner. [Unduh Tailscale](https://tailscale.com/download)
+3. **Simpan Secrets.** Buka **Settings → Secrets and variables → Actions → New repository secret**. Isi sesuai tabel di bawah. [Buka Secrets repo ini](https://github.com/wawanwfs/RDP/settings/secrets/actions)
+4. **Jalankan workflow.** Buka **Actions → pilih Windows, Linux, atau macOS Remote Workspace → Run workflow**, lalu pilih branch `main`. Untuk percobaan pertama, pilih **1 jam**, biarkan pilihan aplikasi di `none` bila tersedia, dan gunakan akses yang direkomendasikan. Di Windows, ubah `install_artcraft=false` jika ingin setup paling ringan. [Cara menjalankan workflow manual](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/manually-run-a-workflow)
+5. **Buka Summary run aktif.** Salin IP, URL, nama pengguna, dan metode akses yang benar-benar tercantum. Coba login dari perangkat klien saat job masih aktif. Setelah selesai, putuskan koneksi dan pilih **Cancel workflow** jika sesi tidak perlu dibiarkan berjalan.
 
-* **macOS VNC is not RDP.** A listening VNC port does not prove interactive GUI: modern Apple permissions and GitHub runner headless sessions can prevent screen control. See [macOS limitations and acceptance](macos/README.md). Hackintosh/non-Apple macOS emulation is not offered.
+### Secrets dan password
 
-Native Linux Webtop images do not require QEMU; Windows runs natively on its hosted runner, and macOS uses **genuine Apple-backed runners**. Nothing in this diagram represents a persistent VPS.
+| Secret | Dipakai untuk | Kapan disiapkan |
+| --- | --- | --- |
+| `TAILSCALE_AUTH_KEY` | Mendaftarkan runner ke tailnet | Semua workspace utama |
+| `RDP_PASSWORD` | Akun Windows `RDP`, akun XRDP Linux, serta akun sementara macOS | Windows pada mode password tetap, Linux jika memilih XRDP, dan semua mode macOS |
+| `VNC_PASSWORD` | noVNC Windows atau Selkies Linux | Jika memilih akses browser Windows dengan password tetap atau akses browser Linux |
 
-## 🔐 First-time setup — shared access for all three workflows
+Di macOS, nama `RDP_PASSWORD` hanya dipakai ulang sebagai secret akun. Koneksinya tetap SSH atau Apple VNC, bukan Microsoft RDP. Secret macOS minimal **12 byte** tanpa baris baru. Linux memerlukan minimal **8 byte** tanpa baris baru untuk secret yang digunakan. Windows noVNC memakai autentikasi VNC klasik yang hanya membaca **8 byte pertama**. Jangan gunakan ulang password Windows RDP sebagai password noVNC.
 
-1. Pastikan [Tailscale](https://tailscale.com/download) aktif pada PC/HP yang akan digunakan mengakses desktop. Siapkan auth key dari [Tailscale Admin](https://login.tailscale.com/admin/settings/keys) dengan cakupan dan masa berlaku minimum yang diperlukan.
-2. Buka **[Settings → Secrets and variables → Actions](https://github.com/wawanwfs/RDP/settings/secrets/actions)** di repository.
-3. Tambahkan nama secret **persis** seperti tabel. Simpan **nilai** hanya di GitHub Secrets, jangan di YAML/README.
-4. Pilih workflow **Windows / Linux / macOS** → **Run workflow** di branch `main`.
-5. Setelah langkah instalasi dan koneksi siap, buka **Actions run → Summary** untuk membaca IP/URL tailnet, port, username, password *mode*, dan status masing-masing aplikasi.
-6. Sambungkan melalui klien RDP atau browser. Gunakan **Cancel workflow** untuk mengakhiri sesi lebih cepat.
-
-| GitHub Actions secret | Fungsi | Catatan |
-|:--|:--|:--|
-| `TAILSCALE_AUTH_KEY` | Menghubungkan runner ke tailnet privat | Dipakai ketiga workflow |
-| `RDP_PASSWORD` | Password Windows RDP, Linux XRDP, **dan macOS SSH/VNC user** | macOS mensyaratkan minimal 12 byte; secret dipakai ulang meski protokol bukan RDP |
-| `VNC_PASSWORD` | Password remote browser/noVNC Windows/Linux | macOS membuat akun `wfsremote` dengan login dari `RDP_PASSWORD`; VNC legacy password tidak diaktifkan |
-
-**Default akun Windows dan Linux adalah `RDP` kapital.** Linux membedakan `RDP` dan `rdp` sebagai dua akun berbeda. Password tidak diambil dari username, dan nilai secret tidak boleh ditempel di issue, log publik atau screenshot.
-
-**Password mode:** `same_from_secret` mempertahankan password rahasia yang sama pada setiap run. `random_each_run` tersedia di kedua workflow tetapi implementasi pelaporan berbeda; **pada Windows password acak dapat tercetak di Actions log pada repo publik**. Pada Linux password per-run diturunkan dari HMAC-SHA256 secret + Run ID, dan **tidak dicetak**. Untuk Linux, petunjuk perhitungan di PC lokal tersedia di [panduan Linux](linux/README.md).
-
-## 🍎 macOS Workspace — Genuine Apple Silicon / Intel
-
-**Default baru: macOS 15 + akun `wfsremote` + private Tailscale + SSH dan percobaan Screen Sharing (VNC)**. Pilih macOS 26 jika membutuhkan toolchain lebih baru, atau varian Intel jika aplikasi Anda membutuhkan x64. macOS tidak memakai server Microsoft RDP; jangan memakai `mstsc` untuk mengakses port 5900.
-
-| Item | Detail |
-|:--|:--|
-| **Launch** | [WFS macOS Remote Workspace](https://github.com/wawanwfs/RDP/actions/workflows/macos-remote-workspace.yml) |
-| **Runners** | `macos-15`, `macos-26`, `macos-15-intel`, `macos-26-intel` |
-| **Remote mode** | `both` default, atau `ssh`/`vnc`; GUI **eksperimental** |
-| **SSH** | `ssh -p 2222 wfsremote@100.x.x.x` di PowerShell Windows, ganti IP/user dari Summary |
-| **VNC** | VNC Viewer dari Windows, atau `vnc://100.x.x.x` dari Mac; login/kendali grafis belum dijamin |
-| **New: browser view** | `gui_preview=true` (default); buka `http://100.x.x.x:6081/` dari Windows via Tailscale; autentikasi `wfsremote` + password remote; **READ-ONLY** |
-| **Apps** | Safari bawaan, opsional VS Code/Codex/Claude, toolchain dan WebTerminal browser |
-| **Sesi** | Default **1 jam**, opsi 3/6 jam; total job tetap maksimal 360 menit |
-| **Credentials** | Pakai kembali `TAILSCALE_AUTH_KEY` dan `RDP_PASSWORD`; password tidak dicetak |
-
-**Hasil CI macOS:** [3/3 berhasil pada Apple Silicon dan Intel](https://github.com/wawanwfs/RDP/actions/runs/42965871428): workflow, akun remote sementara, dan autentikasi SSH password melalui loopback. Koneksi dari PC Windows tetap perlu diuji di tailnet.
-
-**Perbaikan izin perekaman macOS 15/26:** WFS browser preview kini **paused secara default**, menggunakan tombol **Capture one frame** dan batas **satu panggilan screencapture baru tiap 60 detik**. Ini menggantikan polling otomatis yang sebelumnya menumpuk dialog izin “sudo ... screen and audio”. [Panduan pemulihan macOS](macos/README.md). Komponen ScreenCaptureKit native juga sedang diuji tetapi tetap memerlukan persetujuan Apple dan belum otomatis aktif.
-
-**Opsi A input control (eksperimental):** Kami menambahkan [WFS macOS Controller untuk Windows](macos/WINDOWS_CONTROL.md), yang menggabungkan screenshot Tailscale pada port 6081 dengan permintaan input Apple VNC `SetMode(control)` pada port 5900. Ini kandidat untuk mengatasi layar hitam dan input yang diabaikan TigerVNC. Belum boleh disebut selesai sampai klik Finder benar-benar mengubah desktop dalam pengujian pengguna. Memerlukan instalasi komponen protokol pihak ketiga secara opsional dan sadar risiko.
-
-**Perkembangan terbaru:** [CI macOS native](https://github.com/wawanwfs/RDP/actions/runs/43074456846) sudah membuktikan stream PNG asli dari macOS 1024×768 melalui HTTP privat dengan autentikasi serta penolakan mutasi. Preview ini membantu melihat isi layar meski VNC menampilkan hitam, tetapi **belum memberikan kontrol mouse/keyboard**. Selanjutnya perlu menguji screenshot wfsremote pada sesi VNC yang benar-benar sedang berjalan.
-
-**Batasan penting:** Apple mengendalikan izin Screen Sharing pada macOS modern. GitHub-hosted runner dapat menjalankan proses WindowServer tetapi belum tentu menerima koneksi desktop yang bisa dikendalikan dari VNC viewer. Workflow mencatat **status VNC berdasarkan header RFB**, menghentikan mode VNC-only jika layanan tidak ada, dan tidak menonaktifkan SIP, mengubah TCC, atau memaksa autentikasi VNC legacy yang lebih lemah.
-
-Tidak ada opsi Hackintosh VM pada runner Windows/Linux. Mode yang tersedia adalah **macOS resmi di runner Apple**; untuk macOS desktop yang selalu aktif dan bisa dikendalikan penuh, gunakan Apple Mac self-hosted atau penyedia hosted Mac dengan screen sharing yang disetujui.
-
-[Lihat panduan macOS lengkap →](macos/README.md) · [Pengujian native macOS](https://github.com/wawanwfs/RDP/actions/workflows/macos-workspace-checks.yml)
-
----
-
-## 🐧 Linux Workspace — premium desktop without VM
-
-**Rekomendasi bawaan: Ubuntu Webtop + KDE Plasma + XRDP.** KDE menawarkan tampilan modern; Ubuntu menyediakan jalur paket Wine/MetaTrader dan IDE Linux yang lebih mudah. Browser Webtop dan XRDP KDE menggunakan sesi yang **berbeda**, namun keduanya dapat mengakses container yang sama. Instalasi KDE via X11 berbeda dari desktop Wayland pada browser dan memiliki smoke test tersendiri.
-
-| Distro asli (Webtop container) | KDE Plasma | Xfce | MATE | i3 | LXQt | Catatan XRDP |
-|:--|:--:|:--:|:--:|:--:|:--:|:--|
-| **Ubuntu — default** | ✅ | ✅ | ✅ | ✅ | ✅ | Desktop X11; direkomendasikan |
-| Debian | ✅ | ✅ | ✅ | ✅ | — | Desktop X11 |
-| Fedora | ✅ | ✅ | ✅ | ✅ | — | Kebutuhan paket/X11 bervariasi |
-| Arch | ✅ | ✅ | ✅ | ✅ | — | Web mode; native XRDP belum diaktifkan |
-| Alpine | ✅ | ✅ | ✅ | ✅ | — | KDE Wayland-only untuk browser; XRDP KDE tidak diaktifkan |
-
-Distro native memakai tag [LinuxServer Webtop](https://docs.linuxserver.io/images/docker-webtop/), **bukan** VM dan bukan OS Windows yang disamarkan. Opsi ISO eksperimental lama tetap dapat dipilih secara terpisah (`igos-nusantara`) tetapi tidak dijadikan default atau bagian dari matriks native; boot GUI guest belum terverifikasi.
-
-### Default values
-
-| Input Linux | Default | Opsi lain |
-|:--|:--|:--|
-| `distro` | **`ubuntu`** | debian / fedora / arch / alpine / `igos-nusantara` eksperimen |
-| `desktop` | **`kde`** | xfce / mate / i3 / `lxqt` (Ubuntu only) |
-| `remote_access` | **`rdp`** | novnc / both |
-| `rdp_username` | **`RDP`** | Akun Linux case-sensitive |
-| `web_username` | `wfs` | Username web Linux |
-| `tailscale_hostname` | `rdp-runner` | Lowercase, digit, tanda `-` |
-| `hostname_mode` | `same_each_run` | unique_each_run |
-| `duration_hours` | `6` | 1 / 3 |
-| `metatrader_choice` | `none` | mt4 / mt5 / both |
-| `apps_bundle` | `none` | developer / office / media / all |
-
-### 📈 MetaTrader installation — no fake success status
-
-Saat `metatrader_choice=mt4`, `mt5`, atau `both`, workflow memanggil [`linux/install-metatrader.sh`](linux/install-metatrader.sh) otomatis **setelah XRDP dan browser disiapkan**. Script memakai **MT4 Exness dan MT5 MetaQuotes** pada prefix Wine terpisah. Pemasangan hanya menghitung executable yang benar; **uji jendela MT5** dipisahkan karena build MT5 terbaru dapat memunculkan dialog debugger palsu pada Wine.
-
-- **MT5:** installer `mt5setup.exe /auto` resmi; hanya dinyatakan `INSTALLED` jika `terminal64.exe` yang benar, launcher, dan shortcut ada.
-- **MT4:** menggunakan **installer Exness dari tautan resmi**. Pada Wine/Ubuntu, bootstrap MT4 dapat memerlukan GUI sehingga `/auto` bisa berhenti tanpa memasang terminal. Jika demikian, workflow menyimpan installer ke direktori pengguna, membuat shortcut **Install MetaTrader 4 (WFS)** di desktop remote, dan mencatat status **`PENDING_INTERACTIVE`**, bukan `INSTALLED`. Klik shortcut tersebut setelah masuk XRDP dan ikuti wizard. MT4 dinyatakan `INSTALLED` hanya jika `terminal.exe` benar-benar terpasang.
-- **Windows:** MT4/MT5 memakai installer Windows native; tidak memerlukan Wine.
-- **Linux:** jika Chromium sudah tersedia (termasuk Webtop KDE), workflow **menggunakan Chromium bawaan tanpa mengunduh Chrome**. Cookie-Editor dan GoFullPage dipasang melalui kebijakan Chromium; jika Chrome sudah ada digunakan sebagai alternatif, dan Google Chrome baru diinstal hanya saat tidak ada browser yang didukung. Guest ISO eksperimen tetap menggunakan browser host XRDP, bukan aplikasi di guest.
-- **Tidak ada** broker login, password akun trading, EA, atau aktivasi auto-trade yang dilakukan oleh workflow. Pemasangan file bukan bukti terminal benar-benar dapat dipakai trading; buka shortcut dan cek koneksi secara manual.
-
-Installer bisa berstatus `INSTALLED`, `PENDING_INTERACTIVE`, `FAILED`, atau `UNSUPPORTED` per terminal. Bila app opsional gagal, remote tetap disediakan dan penyebabnya tampil di **Actions Summary**. Wine di Alpine tidak didukung oleh tahap ini. Untuk Linux trading terminal terbaik gunakan **Ubuntu**.
-
-### 🪟 Windows MetaTrader — verified installer and interactive recovery
-
-Instalasi Windows sekarang menggunakan **satu script PowerShell yang sama** untuk workflow utama dan CI: [`windows/Install-MetaTrader.ps1`](windows/Install-MetaTrader.ps1). Source MT4 diperoleh dari tautan download Exness, MT5 dari MetaQuotes. Sebelum dieksekusi, **tanda tangan Authenticode** dan sumber installer diverifikasi, lalu installer dijalankan tanpa interaksi jika didukung.
-
-Sukses **hanya** bila terminal yang benar ditemukan di disk: MT4 `terminal.exe` (contoh lokasi CI: `C:\Program Files (x86)\MetaTrader 4 EXNESS\terminal.exe`), MT5 `terminal64.exe` (`C:\Program Files\MetaTrader 5\terminal64.exe`). **Exit code installer bukan satu-satunya penentu hasil**—installer bisa menutup proses induk dengan status nonzero sementara terminal sudah terpasang.
-
-Jika setup otomatis tidak menghasilkan terminal yang benar, script menyalin installer yang sudah diverifikasi ke `C:\ProgramData\WFS-Remote-Workspaces\PendingTrading\` dan membuat shortcut **Install MetaTrader 4 (WFS)** atau **Install MetaTrader 5 (WFS)** di *Public Desktop* untuk dibuka setelah login RDP. Status yang dilaporkan **🟠 Pending Interactive**, **bukan Installed**, sampai pengguna menyelesaikan instalasi. Tidak ada login akun broker atau transaksi otomatis.
-
-**Bukti CI:** [Windows MT4 + MT5 berhasil terpasang dengan file executable terverifikasi](https://github.com/wawanwfs/RDP/actions/runs/42924327969). [Windows verification terbaru](https://github.com/wawanwfs/RDP/actions/workflows/windows-workspace-checks.yml) juga menguji pengamanan fallback. Pengujian ini **tidak** membuktikan keberhasilan logon broker, rendering chart, penggunaan EA, ataupun koneksi dari perangkat eksternal.
-
-### 🧩 MT5 Wine compatibility and reliable browser fallback
-
-Pada pengujian KDE/RDP, **MT5 dapat berhasil terinstal tetapi gagal saat dibuka**, menampilkan `A debugger has been found running in your system`. Laporan MQL5 pada Oktober 2026 menghubungkan gejala ini dengan kompatibilitas **build MT5 terkini dan Wine**, termasuk Wine 9/10. Run pengguna sebelumnya mencatat Wine 10.0. Karena itu penggantian Wine saja **tidak dijadikan klaim perbaikan pasti**.
-
-- Installer Exness MT5 resmi **telah diuji** tetapi mode `/auto` tidak menyelesaikan instalasi di Wine. Jalur otomatis kembali memakai **installer MetaQuotes** yang terbukti menghasilkan executable; **GUI tetap harus diuji terpisah**.
-- [`test-metatrader-gui.sh`](linux/test-metatrader-gui.sh) menguji **jendela MT5 sungguhan** di Xvfb. Hasil GUI dipisahkan dari pemeriksaan bahwa `terminal64.exe` ada.
-- Jika Wine tidak kompatibel, tersedia menu **MetaTrader WebTerminal (WFS fallback)** yang membuka terminal berbasis browser di Chromium. Ini tidak mendukung EA desktop.
-- Untuk kebutuhan **MetaTrader 5/MetaEditor/EA desktop**, workflow **Windows RDP native** tetap jalur dengan kompatibilitas paling baik dan instalasi MT4/MT5 yang sudah terverifikasi; login dan EA harus diuji sebelum penggunaan sungguhan.
-
-**Browser premium Linux:** Chromium bawaan Webtop KDE diprioritaskan. CI telah membuktikan Chromium `156.0.8078.73` digunakan kembali tanpa memasang Chrome tambahan. Status browser terpilih dan tindakan instalasi dicatat dalam Actions Summary.
-
-### 📦 Application selection
-
-| Menu | Windows | Linux |
-|:--|:--|:--|
-| IDE | VS Code, Antigravity | VS Code / Antigravity Linux (jika tersedia) |
-| Video | CapCut, Shotcut | Shotcut; CapCut native **unsupported** |
-| Trading | MT4, MT5 | MT4, MT5 lewat Wine + pemeriksaan binary |
-| AI Router | 9Router, OmniRoute | 9Router, OmniRoute jika dependensi tersedia |
-| Coding | Codex CLI, Claude Code | Codex CLI, Claude Code |
-| Agents | Hermes, OpenClaw, OpenCode | Hermes, OpenClaw, OpenCode |
-| Creative | ArtCraft Launcher | ArtCraft Launcher dengan dukungan paket distro |
-| Bundle | Paket aplikasi opsional | Developer / Office / Media / All |
-| Browser wajib | Chrome + extensions | **Chromium bawaan lebih diutamakan**, Cookie-Editor dan GoFullPage; tanpa Chrome ganda |
-
-**Catatan:** memilih aplikasi berarti **meminta** pemasangan, bukan menjamin aplikasi lolos. Periksa status masing-masing aplikasi di Summary. Ekstensi Chromium/Chrome diunduh ketika profil browser pertama dibuka dan jaringan ke Chrome Web Store tersedia; verifikasi di `chrome://extensions`.
-
-### 🔌 How to connect
-
-**RDP/XRDP — Windows PC:** `Win + R` → `mstsc` → alamat `100.x.x.x:3389` dari Summary → pengguna `RDP` → password secret. Pastikan Tailscale PC menyala. Untuk RDP Linux, pilih sesi **Xorg** di menu XRDP bila ditampilkan.
-
-**Browser remote — Windows/Android:** pilih `remote_access=novnc` atau `both`, lalu buka URL **yang benar-benar dicetak di Summary**. Webtop Linux memakai `https://100.x.x.x:6082/` pada fallback TLS self-signed atau domain tailnet HTTPS 443 jika diaktifkan. Windows noVNC memakai jalur `/vnc.html` pada transport yang dipilih. Jangan menganggap port HTTPS/Linux sama dengan Windows HTTP/noVNC.
-
-## 🧪 Quality gates & honest status
-
-| Evidence | Kegunaan | Batasan |
-|:--|:--|:--|
-| [Windows CI](https://github.com/wawanwfs/RDP/actions/workflows/windows-workspace-checks.yml) | YAML/PowerShell static checks; signed native MT4/MT5 installer execution, terminal or pending-UI verification | Installer acceptance is not broker/GUI acceptance |
-| [Linux CI](https://github.com/wawanwfs/RDP/actions/workflows/linux-workspace-checks.yml) | Bash syntax, YAML, security assertions, Webtop HTTPS, RDP/Xorg smoke tests | Per-run results can change; check latest HEAD |
-| Default KDE XRDP smoke | Login FreeRDP dan proses KDE X11 | Tidak menjamin setiap GPU/klien remote sama |
-| Debian Xfce smoke | Verifikasi baseline dan kompatibilitas | Tidak membuktikan semua distro/desktop |
-| Linux MT4 Wine test | Original Exness installer, 32-bit Wine runtime, and pending-GUI verification | No unattended MT4 installation claimed when terminal.exe is missing |
-| Wine status per terminal | Pemeriksaan executable MT4 atau MT5 yang terpasang | Tidak membuktikan login broker, chart rendering, EA, atau runtime uptime |
-| [Windows workflow](https://github.com/wawanwfs/RDP/actions/workflows/windows-remote-workspace-with-apps.yml) | Full Windows setup, app installs, session dashboard | Lihat log dan Summary run aktual |
-
-Status `Remote READY` berarti layanan pada runner telah diperiksa. **Bukan** jaminan perangkat eksternal berhasil login. Status `INSTALLED` Wine memeriksa file terminal, bukan penyelesaian UI/trading end-to-end.
-
-## 🔒 Networking, session lifecycle, and safety
-
-- RDP dan web diakses **hanya dari tailnet pribadi** sesuai ACL/grants; tidak menggunakan Tailscale Funnel atau akses publik langsung.
-- Linux Webtop Docker bind pada loopback runner, dan forwarder hanya pada alamat IPv4 Tailscale. Windows membatasi RDP melalui firewall/Tailscale.
-- Hindari password lemah; gunakan auth key Tailscale minimal privilege. Jangan membuka port 3389/5900/6082 ke internet publik atau mengunggah screenshot credential.
-- **1/3/6 jam** adalah pilihan durasi sesi. Batas total workflow **360 menit sejak job dimulai**, sehingga setup mengurangi waktu tersisa. Keep Alive bekerja selama runner masih berjalan.
-- Klik **Cancel workflow** untuk menutup sesi. Cleanup menghapus container dan file rahasia sementara sebatas yang dapat dibersihkan sebelum job dihentikan.
-- Jika run gagal, cek **job yang gagal**, bukan hanya status hasil akhir; paket GUI/Wine besar dapat melebihi waktu setup pada hosted runner.
-
-## 🆘 Quick troubleshooting
-
-| Gejala | Cek |
-|:--|:--|
-| `RDP` user doesn't exist | Gunakan huruf kapital; periksa langkah XRDP PAM dan kesesuaian `rdp_username` |
-| Login sukses tetapi blank/black | Lihat `/home/RDP/.wfs-xrdp-session.log`, hasil smoke desktop terpilih dan paket X11 |
-| KDE tidak tampil / malah Xfce | Pastikan run menggunakan commit terbaru; lihat `WFS_RDP_DESKTOP_READY` di Summary |
-| MetaTrader tidak tampak | Periksa step **Install selected MetaTrader** dan baris `INSTALLED/FAILED` per terminal |
-| MT4 malah MT5 | Verifikasi sumber instalasi broker dan executable `terminal.exe` yang sesuai |
-| NoVNC tidak membuka URL | Pastikan memilih `novnc`/`both`, Tailscale terhubung, baca URL aktual |
-| Tailscale connect timeout | Cek `TAILSCALE_AUTH_KEY`, ACL/grants, status node serta rute tailnet |
-| `RDP`/port tidak terbuka | Uji `Test-NetConnection 100.x.x.x -Port 3389` dari PowerShell |
-| Sesi tiba-tiba berhenti | Lihat batas 360 menit, log Keep Alive, Cancel/timeout status |
-
-Untuk panduan Linux yang lebih mendalam, password per-run dan detail paket, baca **[`linux/README.md`](linux/README.md)**. Rincian workflow Windows ada di bagian selanjutnya.
-
----
+- **`same_from_secret`** memakai nilai secret secara langsung. Ini pilihan yang disarankan untuk percobaan pertama.
+- **`random_each_run`** berbeda antar-OS. Pada workflow **Windows**, password acak RDP dan noVNC dapat tercetak di log. Hindari opsi ini di repo publik. **Linux dan macOS** menurunkan password dari secret dan Run ID tanpa mencetak password mentah. Cara menghitungnya tersedia di [panduan Linux](linux/README.md) dan [panduan macOS](macos/README.md).
 
 ## 🪟 Windows Remote Workspace
 
-## ✨ Ringkasan
+**Pengaturan awal** · `windows_version=windows-2025` · `remote_access=rdp` · akun `RDP`
 
-WFS Windows Remote Workspace menggunakan **GitHub-hosted Windows runner sementara** untuk menyiapkan desktop serta aplikasi pilihan Anda. Sambungkan perangkat ke tailnet yang sama menggunakan **Tailscale**, lalu akses melalui Microsoft Remote Desktop, browser noVNC, atau keduanya.
+| Mode | Cara masuk dari Windows 10/11 | Port privat |
+| --- | --- | --- |
+| `rdp` | Buka Remote Desktop Connection dengan `mstsc`, masukkan alamat dari Summary, lalu login sebagai `RDP` | `3389/TCP` |
+| `novnc` | Buka URL `/vnc.html` dari Summary di browser, lalu masukkan password noVNC | HTTP `6082` atau HTTPS `443` |
+| `both` | Kedua akses tersedia. Desktop sesi RDP dan console yang ditampilkan noVNC dapat berbeda | `3389` dan port web aktif |
 
-| Fitur | Detail |
-|:--|:--|
-| 🖥️ Mode | `rdp`, `novnc`, atau `both` |
-| 🔐 Jaringan | Tailscale privat; tanpa tunnel publik |
-| 🌐 noVNC | TCP `6082` atau HTTPS `443`; **auto-fit browser** dan auto-connect pada run baru |
-| ⏳ Durasi | Pilihan `1`, `3`, atau `6` jam setelah setup, tetap tunduk pada batas job total `360` menit |
-| 🔎 Verifikasi | Pemeriksaan HTTP, WebSocket, dan handshake RFB/VNC |
-| 🧹 Penutupan | Logout Tailscale saat selesai, dengan penanganan cleanup best-effort |
+- **noVNC.** Pilih image **x64** untuk `novnc` atau `both`. `windows-11-arm` tidak mendukung noVNC pada workflow ini.
+- **Transport web.** `tailscale_tcp` adalah default dan memakai **HTTP** pada port `6082` melalui tailnet. `tailscale_https` memakai HTTPS pada port `443` jika sertifikat dan Serve siap. Jika konfigurasi HTTPS gagal, workflow mencoba kembali lewat TCP privat. Gunakan **Active transport** dan URL aktual dari Summary.
+- **Tampilan.** URL dari Summary sudah meminta penskalaan gambar dan koneksi otomatis. Untuk layar penuh, gunakan tombol **Full screen** pada toolbar noVNC atau `F11`. Resolusi desktop aktual tetap bergantung pada driver dan sesi console. Log penyesuaian resolusi ada di `C:\ProgramData\RDP-Setup\wfs-display-resolution.log` pada runner.
+- **Kesiapan.** noVNC memakai TightVNC dan websockify di loopback. Pemeriksaan HTTP, WebSocket, dan RFB di runner berguna untuk diagnosis, tetapi login dan input tetap perlu diuji dari PC Anda. Status aplikasi ada di **App Status**.
 
-> [!IMPORTANT]
-> **Ini bukan VPS/komputer permanen.** Runner dan isinya dapat hilang ketika Actions selesai, gagal, dibatalkan, atau mencapai batas platform. Simpan pekerjaan penting ke storage/repository terpisah. Status setup `success` belum membuktikan browser dari PC lain dapat terhubung.
+[Run Windows Workspace →](https://github.com/wawanwfs/RDP/actions/workflows/windows-remote-workspace-with-apps.yml)
 
-## 🧭 Arsitektur dan port
+## 🐧 Linux Workspace
 
-```text
-                         GitHub Actions • Windows runner
-                                       │
-                                Windows desktop
-                      ┌────────────────┴────────────────┐
-                      │                                 │
-                RDP (jika dipilih)               TightVNC Server
-                TCP 3389 / tailnet              127.0.0.1:5900
-                      │                                 │
-                      │                           websockify/noVNC
-                      │                           127.0.0.1:6081
-                      │                                 │
-                      │                      Tailscale Serve (pilih SATU)
-                      │                       ├─ TCP 6082 (HTTP)
-                      │                       └─ HTTPS 443 (*.ts.net)
-                      │                                 │
-                      └────────────────┬────────────────┘
-                                       │
-                             Perangkat di tailnet yang sama
-```
+**Pengaturan awal** · `distro=ubuntu` · `desktop=kde` · `remote_access=rdp`
 
-| Port | Komponen | Visibilitas |
-|:--|:--|:--|
-| `3389/TCP` | Windows RDP | Hanya dibuka melalui firewall untuk IP tailnet saat mode `rdp`/`both` |
-| `5900/TCP` | TightVNC (RFB) | **Loopback lokal** |
-| `6081/TCP` | websockify / noVNC web UI | **Loopback lokal** |
-| `6082/TCP` | Tailscale Serve TCP | Pilihan default noVNC, hanya lewat tailnet |
-| `443/TCP` | Tailscale Serve HTTPS | Alternatif noVNC, membutuhkan HTTPS/sertifikat tailnet yang sudah tersedia |
-| `6080` | HTTP direct lama | **Tidak digunakan lagi** |
+| Mode | Cara masuk | Akun bawaan |
+| --- | --- | --- |
+| `rdp` | Buka `mstsc` ke alamat `:3389` dari Summary. Jika layar login XRDP meminta jenis sesi, gunakan Xorg | `RDP`, huruf besar |
+| `novnc` | Buka tautan HTTPS dari Summary. Label formulir ini membuka **Selkies Webtop**, bukan noVNC Windows | `wfs` |
+| `both` | Pilih akses yang sesuai. XRDP dan Selkies membuka **dua sesi desktop** dalam container yang sama | Masing-masing akun di atas |
 
-**Tidak perlu membuka port 5900/6081 ke internet atau membuat port forwarding router.** Untuk noVNC, workflow hanya mengonfigurasi **salah satu** dari `6082` atau `443` pada satu run. Server websockify dijalankan lewat Windows Scheduled Task agar tetap berjalan setelah langkah instalasi selesai.
+- **Pilihan distro dan desktop.** Ubuntu, Debian, Fedora, Arch, dan Alpine berjalan sebagai container Webtop. Pilihan desktop bergantung pada distro. Arch dan Alpine KDE memakai mode web, sedangkan LXQt tersedia untuk Ubuntu. **IGOS Nusantara** adalah opsi ISO/QEMU eksperimental dengan host luar Xfce dan RDP. Boot desktop guest belum terverifikasi.
+- **HTTPS browser.** `transport=auto` mencoba Tailscale HTTPS pada `443` dan dapat beralih ke **HTTPS** pada `6082` dengan sertifikat self-signed. Cocokkan alamat dengan Summary run aktif jika browser menampilkan peringatan sertifikat.
+- **Akun.** `rdp_username` dan `web_username` dapat diubah terpisah. Di XRDP, `RDP` dan `rdp` bukan nama akun yang sama. Pastikan **Keyboard Layout** saat memasukkan password.
+- **Browser.** Workflow mengutamakan Chromium yang sudah tersedia, lalu menggunakan Chrome yang sudah ada atau memasang Chrome bila perlu. Kebijakan menargetkan **Cookie-Editor** dan **GoFullPage**. Periksa ekstensi langsung di profil desktop setelah login.
 
-## 🔐 Persiapan: Secrets
+[Panduan Linux lengkap →](linux/README.md) · [Run Linux Workspace](https://github.com/wawanwfs/RDP/actions/workflows/linux-remote-workspace.yml)
 
-Buka **[Settings → Secrets and variables → Actions](https://github.com/wawanwfs/RDP/settings/secrets/actions)**, lalu buat repository secrets sesuai mode:
+## 🍎 macOS Workspace
 
-| Secret | Kapan dibutuhkan | Fungsi |
-|:--|:--|:--|
-| `TAILSCALE_AUTH_KEY` | **Selalu** | Menghubungkan Windows runner ke tailnet |
-| `RDP_PASSWORD` | Jika `rdp_password_mode=same_from_secret` (default) | Password akun Windows `RDP` |
-| `VNC_PASSWORD` | Jika noVNC digunakan dan `vnc_password_mode=same_from_secret` (default) | Password autentikasi VNC |
+**Pengaturan awal** · `runner_label=macos-15` · `remote_username=wfsremote` · `duration_hours=1`
 
-> [!WARNING]
-> Nama secret Tailscale yang **benar adalah `TAILSCALE_AUTH_KEY`**, bukan `TS_AUTHKEY`. Jangan tempelkan nilai secret ke README, issue, atau log yang dibagikan. Mode `random_each_run` untuk password VNC mencetak password di log Actions; **log repo publik dapat dibaca umum**. Gunakan secret tetap untuk penggunaan yang lebih aman. VNCAuth klasik hanya memakai **8 byte pertama** password.
+Workspace ini memakai runner macOS di perangkat Apple, dengan pilihan Apple Silicon dan Intel. Untuk shell saja, pilih `remote_access=ssh`. Untuk ikut menguji Apple Screen Sharing sambil mempertahankan SSH, pilih `both` (default).
 
-## 🚀 Menjalankan workflow
-
-1. Instal/login **[Tailscale](https://tailscale.com/download)** pada PC Windows 10/11 Anda, pastikan berada pada tailnet yang sama dengan auth key runner.
-2. Buka **[Windows Remote Workspace with Apps](https://github.com/wawanwfs/RDP/actions/workflows/windows-remote-workspace-with-apps.yml)** → **Run workflow** → pilih branch `main`.
-3. Pilih `windows_version` (disarankan `windows-2025`), lalu `remote_access`: `rdp`, `novnc`, atau `both`.
-4. Pilih `duration_hours`: `1`, `3`, atau `6` (default), serta aplikasi/IDE yang ingin dipasang.
-5. Untuk noVNC, pilih `novnc_transport=tailscale_tcp` (default). Mode `tailscale_https` memerlukan HTTPS Certificates dan MagicDNS aktif pada tailnet; jika setup/sertifikat HTTPS gagal, workflow akan mencoba otomatis **fallback ke TCP privat 6082**.
-6. Klik **Run workflow**, buka run tersebut, dan lihat **Summary** untuk hostname, IP, URL noVNC aktual, serta petunjuk password. Gunakan **URL dari run yang sedang aktif**, bukan URL sesi sebelumnya.
-
-**Pilihan utama pada formulir Actions**
-
-| Input | Pilihan penting | Default |
-|:--|:--|:--|
-| `windows_version` | `windows-latest`, `windows-2025`, `windows-2022`, `windows-11-arm`, `windows-2025-vs2026` | `windows-2025` |
-| `remote_access` | `rdp` / `novnc` / `both` | `rdp` |
-| `duration_hours` | `1` / `3` / `6` | `6` |
-| `hostname_mode` | `same_each_run` / `unique_each_run` | `same_each_run` |
-| `rdp_password_mode` / `vnc_password_mode` | `same_from_secret` / `random_each_run` | `same_from_secret` |
-| `novnc_transport` | `tailscale_tcp` / `tailscale_https` | `tailscale_tcp` |
-
-**Catatan:** mode noVNC tidak didukung pada runner Windows ARM64 dalam workflow ini; pilih runner x64 untuk `novnc` atau `both`. Label `windows-2025-vs2026` mungkin tidak tersedia untuk semua jenis repository.
-
-## 🖥️ Cara masuk ke workspace
+| Jalur | Cara pakai | Yang dibuktikan |
+| --- | --- | --- |
+| **SSH · `2222`** | `ssh -p 2222 wfsremote@100.64.0.10`, ganti user dan IP sesuai Summary | Login shell. CI juga menguji autentikasi SSH di loopback, bukan koneksi dari PC Anda |
+| **Private Preview · `6081`** | Aktifkan `gui_preview=true`, buka URL HTTP privat dari Summary, login, lalu pilih **Capture one frame** | Screenshot saja. Capture manual dapat memakai cache hingga sekitar 60 detik |
+| **Apple Screen Sharing · `5900`** | Gunakan klien yang mendukung autentikasi Apple pada tailnet. Tidak menggunakan `mstsc` | Status RFB hanya menunjukkan respons protokol. Login grafis, framebuffer, dan input perlu dibuktikan terpisah |
 
 <details>
-<summary><strong>Opsi A — Microsoft Remote Desktop (RDP)</strong></summary>
+<summary><strong>Opsi A · WFS macOS Controller untuk Windows</strong></summary>
 
-Pastikan `remote_access=rdp` atau `both` dan PC Anda tersambung ke Tailscale.
+**Capture one frame** menampilkan screenshot privat. **Capture Apple VNC** mengambil gambar dari sesi VNC yang dipakai untuk mengirim input. Jika yang pertama menampilkan Finder tetapi yang kedua tetap hitam, preview tidak membuktikan bahwa jalur input berfungsi. Pesan input terkirim juga belum membuktikan bahwa macOS memprosesnya.
 
-1. Tekan `Win + R` → ketik `mstsc` → Enter.
-2. Isi **Computer** dengan hostname Tailscale atau IP `100.x.x.x` yang tercantum pada Actions Summary.
-3. Login dengan username `RDP` dan password sesuai `rdp_password_mode`.
-4. Port yang digunakan adalah TCP `3389` melalui Tailscale; **bukan** RDP yang dipublikasikan ke internet.
+Controller masih eksperimental dan memakai dependensi pihak ketiga. Permintaan `SetMode(control)` tidak memberi izin baru di macOS. Uji yang dianggap lulus adalah perubahan yang terlihat pada desktop setelah klik atau input keyboard yang aman dari klien.
+
+[Panduan controller dan uji input](macos/WINDOWS_CONTROL.md) · [Batasan Remote Management dari Apple](https://support.apple.com/id-id/guide/remote-desktop/apd8b1c65bd/mac)
 
 </details>
 
+[Panduan macOS lengkap →](macos/README.md) · [Run macOS Workspace](https://github.com/wawanwfs/RDP/actions/workflows/macos-remote-workspace.yml)
+
+## Aplikasi opsional
+
+| Kategori | Windows | Linux | macOS |
+| --- | --- | --- | --- |
+| **IDE & coding CLI** | VS Code, Antigravity, Codex CLI, Claude Code | VS Code, Antigravity, Codex CLI, Claude Code | VS Code, Codex CLI, Claude Code |
+| **Media** | CapCut, Shotcut | Shotcut dan paket media | Paket tooling media CLI |
+| **AI tooling** | 9Router, OmniRoute, Hermes, OpenClaw, OpenCode | 9Router, OmniRoute, Hermes, OpenClaw, OpenCode | Pilihan coding CLI di atas |
+| **ArtCraft Launcher** | Rilis stabil resmi, dengan verifikasi checksum aset | Opsi instalasi eksperimental. Tidak native di Alpine | Tidak tersedia di formulir |
+| **MetaTrader** | MT4/MT5 native | MT4/MT5 via Wine | Opsi WebTerminal, tanpa EA desktop |
+
+- **MetaTrader Windows.** Workflow memeriksa installer dan executable MT4/MT5. Jika pemasangan silent tidak selesai, installer bisa disiapkan untuk dijalankan manual di desktop. **Pending Interactive** bukan status berhasil terpasang. [Installer Windows](windows/Install-MetaTrader.ps1)
+- **MetaTrader Linux.** Executable yang ditemukan belum membuktikan GUI berjalan. MT4 bisa memerlukan pemasangan interaktif. Jika MT5 bermasalah di Wine, gunakan WebTerminal untuk akses browser atau Windows native jika perlu EA desktop. [Panduan Linux](linux/README.md)
+- **ArtCraft.** Di Windows, `install_artcraft` aktif secara default. Matikan untuk percobaan koneksi yang lebih ringan. Di Linux, opsi ini nonaktif secara default.
+- **Pemeriksaan setelah login.** Buka aplikasi yang Anda pilih dan periksa ekstensi Chrome/Chromium dari profil yang benar. Login broker atau penyedia AI tetap dilakukan pengguna. Status instalasi tidak berarti akun sudah terhubung.
+
+## Durasi, jaringan, dan data
+
+- **Durasi.** Pilih **1, 3, atau 6 jam**. Batas job adalah **360 menit dari awal job**, termasuk instalasi. Pilihan 6 jam bisa menyisakan waktu remote kurang dari 6 jam. Job `in_progress` saat **Keep Alive** adalah normal. [Batas GitHub Actions](https://docs.github.com/en/actions/reference/limits)
+- **Data.** Runner bersifat sementara. Simpan pekerjaan ke lokasi yang Anda kendalikan sebelum job berhenti. Jangan mengandalkan file, instalasi, sesi browser, atau proses tetap ada setelah run berakhir.
+- **Hostname.** Default ketiga workflow adalah `rdp-runner` dengan `same_each_run`. Untuk beberapa run aktif sekaligus, gunakan hostname berbeda atau `unique_each_run` agar mudah membedakan node. Selalu gunakan IP dan URL run aktif dari Summary.
+- **Jaringan privat.** Tiga workflow utama memakai tailnet, bukan tautan desktop publik. Tidak perlu port forwarding di router. Beri perangkat klien akses yang diperlukan lewat kebijakan tailnet dan jangan bagikan auth key, password, atau log yang belum disunting.
+- **Biaya dan kebijakan.** Penggunaan runner mengikuti batas dan kebijakan GitHub Actions. Periksa kuota akun Anda, terutama sebelum menjalankan sesi macOS atau sesi panjang.
+
+## Troubleshooting
+
+| Gejala | Periksa dulu |
+| --- | --- |
+| **Run workflow** tidak muncul | Pastikan Actions diaktifkan, workflow ada di default branch, dan akun Anda punya akses menjalankan workflow. Jika memakai fork, buka tab Actions di fork tersebut. |
+| Runner tidak dapat dihubungi | Buka Summary run aktif. Periksa Tailscale di kedua sisi, IP terbaru, dan aturan akses perangkat. Runner lama tidak bisa dipakai kembali. |
+| Windows noVNC tidak bisa dibuka | Salin **Active transport**. Windows `6082` menggunakan **HTTP**. Jika HTTP sudah menjawab tetapi koneksi gagal, cek WebSocket/RFB di log dan coba dari klien tailnet. |
+| Linux XRDP menolak login atau blank | Cocokkan akun huruf besar `RDP`, jenis sesi Xorg, dan desktop pilihan. Coba konfigurasi Ubuntu/KDE tanpa aplikasi opsional untuk membedakan masalah sesi dan instalasi. |
+| Linux web menampilkan peringatan sertifikat | Cocokkan URL dengan Summary. Fallback Linux `6082` menggunakan **HTTPS** self-signed. Jika butuh sertifikat tailnet, siapkan HTTPS Certificates dan gunakan mode Tailscale HTTPS. |
+| macOS terlihat di preview, tetapi tidak bisa diklik | Pastikan apakah gambar berasal dari **Capture Apple VNC** atau **Capture one frame**. Tetap gunakan SSH untuk akses yang tersedia. [Panduan diagnosis macOS](macos/README.md) |
+| Aplikasi tidak muncul atau tidak bisa dibuka | Cek **App Status** atau log installer. Lalu login ke desktop yang benar dan buka aplikasinya. Status pending, installer tersedia, dan GUI berjalan adalah tiga hal berbeda. |
+
 <details>
-<summary><strong>Opsi B — noVNC dari browser (disarankan untuk akses web)</strong></summary>
+<summary><strong>Contoh pemeriksaan dari PowerShell Windows 10/11</strong></summary>
 
-Pastikan `remote_access=novnc` atau `both`. Buka **alamat aktual yang dicetak pada Summary** dari perangkat yang sudah terhubung ke tailnet:
-
-| Transport | Format URL | Catatan |
-|:--|:--|:--|
-| `tailscale_tcp` | `http://100.x.x.x:6082/vnc.html#resize=scale&autoconnect=1` | **HTTP** pada port 6082; lalu autentikasi VNC |
-| `tailscale_https` | `https://nama-host.tailnet.ts.net/vnc.html#resize=scale&autoconnect=1` | **HTTPS** via Tailscale Serve port 443 jika berhasil diuji; jika gagal gunakan URL HTTP 6082 dari Summary |
-
-Halaman noVNC **mencoba terkoneksi otomatis** ketika dibuka (password VNC tetap diminta jika diperlukan). Jika memilih `tailscale_https` tetapi sertifikat/izin Tailscale Serve belum siap, workflow akan menonaktifkan konfigurasi HTTPS yang gagal, lalu mengaktifkan **TCP 6082**. Summary mencantumkan **Requested transport**, **Active transport**, dan **HTTPS fallback** (bila terjadi), sehingga jangan mengasumsikan HTTPS aktif sebelum melihat URL aktual. **Jangan** mengganti `http://` menjadi `https://` pada port `6082`: layanan HTTP tersebut tetap dilindungi enkripsi antar-node Tailscale, bukan port publik.
-
-noVNC mengakses **sesi console Windows**, yang dapat berbeda dari desktop user pada sesi RDP. Keberhasilan membuka HTML tidak otomatis berarti koneksi WebSocket atau layar VNC sudah berfungsi.
-
-</details>
-
-## 🖼️ Wallpaper dan layar browser otomatis
-
-**Penyebab wallpaper hitam teridentifikasi:** TightVNC memasang `RemoveWallpaper=1` secara default, yang menyembunyikan wallpaper saat VNC tersambung. Workflow sekarang memasang `VALUE_OF_REMOVEWALLPAPER=0` dan memverifikasi registry serta servis setelah instalasi. Tampilan tetap dapat berbeda antara sesi console dan sesi RDP.
-
-Workflow terbaru mencoba menggunakan **wallpaper bawaan Windows** jika wallpaper belum disetel dan tidak lagi memaksakan opsi visual "best performance". Ini *best effort*: wallpaper mungkin tetap gelap jika console yang dilihat berbeda dari profil Windows yang diubah. Jika ingin mengganti secara manual, di desktop remote pilih **klik kanan → Personalize → Background → Picture**.
-
-**Skala tampilan otomatis:** noVNC menggunakan `resize=scale` agar gambar desktop mengikuti ukuran browser. Run terbaru memperbaiki logika resolusi Windows: karena proses Actions tidak memiliki display aktif, workflow **membuat Scheduled Task yang mencoba pengaturan 16:9 setelah login interaktif Windows** (`1920×1080`, `1600×900`, `1366×768`, atau `1280×720` yang tersedia). Jika sudah ada pengguna console aktif, task juga dicoba segera. Hasil perubahan aktual dicatat di `C:\ProgramData\RDP-Setup\wfs-display-resolution.log`. **Ini bukan jaminan driver virtual runner mendukung resolusi tersebut**; jika gagal, resolusi asli tetap digunakan dan menu Windows Display Settings masih dapat dipakai manual. Fullscreen browser tetap memerlukan klik atau F11.
-
-**Layar penuh:** noVNC tidak dapat otomatis mengambil kontrol fullscreen browser tanpa interaksi pengguna. Gunakan **F11** di browser atau ikon **Full screen** pada toolbar noVNC. Untuk mengubah pengaturan secara manual: **noVNC → Settings → Scaling mode → Local scaling**.
-
-Jika ingin mengubahnya pada koneksi yang **sudah berjalan**, cukup tambahkan fragment berikut setelah `vnc.html` di address bar (tanpa membuat ulang runner):
-
-```text
-#resize=scale&autoconnect=1
-```
-
-Refresh halaman jika perlu; Anda akan diminta autentikasi VNC lagi bila sesi baru memerlukannya. Pengaturan otomatis dari workflow hanya berlaku untuk **run baru** setelah perubahan di GitHub.
-
-## 🔬 Verifikasi di Actions
-
-Untuk mode noVNC, jalur yang diperiksa workflow adalah:
-
-```text
-Install noVNC + TightVNC
-           ↓
-Websockify sebagai Scheduled Task (SYSTEM) di 127.0.0.1:6081
-           ↓
-Tailscale Serve TCP 6082 atau HTTPS 443
-           ↓
-Verify noVNC HTTP, WebSocket and RFB
-           ↓
-Generate Dashboard Summary
-           ↓
-Remote READY – Keep Alive
-```
-
-Di Summary, lihat nilai **noVNC localhost HTTP**, **localhost WebSocket/VNC-RFB**, **Tailscale Serve self-probe HTTP**, dan **self-probe WebSocket/VNC-RFB**.
-
-> [!NOTE]
-> Self-probe berjalan **dari dalam runner**, bukan dari PC Anda. Hasil `PASS` membantu memisahkan masalah backend dan Serve, tetapi **belum membuktikan akses eksternal**. Setelah run aktif, uji koneksi dari PC Tailscale Anda sendiri.
-
-## 🛠️ Diagnostik di Windows 10/11
-
-Gunakan **PowerShell** dan **IP Tailscale terbaru** dari Summary run aktif (ganti `100.x.x.x` pada contoh):
+Ganti IP contoh dengan IP Tailscale run aktif. Jalankan hanya pemeriksaan untuk mode yang Anda pilih.
 
 ```powershell
-# Pastikan perangkat runner masih dapat dihubungi di tailnet
-tailscale ping 100.x.x.x
+$RunnerIp = '100.64.0.10'
 
-# Mode default: Tailscale Serve TCP 6082
-Test-NetConnection 100.x.x.x -Port 6082
+tailscale status
+tailscale ping $RunnerIp
 
-# Periksa status HTTP, bukan sekadar port TCP
-curl.exe --noproxy "*" --max-time 15 -sS -o NUL -w "HTTP %{http_code}\n" "http://100.x.x.x:6082/vnc.html"
+# Windows RDP atau Linux XRDP
+Test-NetConnection $RunnerIp -Port 3389
+mstsc "/v:$RunnerIp"
 
-# Untuk mode tailscale_https, cek port 443:
-# Test-NetConnection <IP-TAILSCALE> -Port 443
-# Buka URL https://<hostname>.ts.net/vnc.html dari Actions Summary
+# Windows noVNC dengan Active transport = tailscale_tcp
+Test-NetConnection $RunnerIp -Port 6082
+curl.exe --noproxy "*" --max-time 15 -I "http://$($RunnerIp):6082/vnc.html"
+
+# macOS SSH. Ganti wfsremote jika username di Summary berbeda.
+Test-NetConnection $RunnerIp -Port 2222
+ssh -p 2222 "wfsremote@$RunnerIp"
 ```
 
-| Gejala | Pemeriksaan |
-|:--|:--|
-| Tailscale ping gagal | Runner mungkin sudah berhenti; periksa IP terbaru, perangkat online, dan login tailnet |
-| Ping berhasil tetapi TCP 6082 gagal | Periksa mode `novnc_transport`, pemetaan Tailscale Serve, dan ACL/grants tailnet |
-| TCP 6082 sukses tetapi `curl` gagal | Periksa langkah verifikasi HTTP dan status Scheduled Task websockify pada log run |
-| HTTP 200 tetapi tombol **Connect** gagal | Buka `F12 → Network → WS`, lalu bandingkan log WebSocket/VNC-RFB di Actions |
-| Browser mencoba HTTPS pada port 6082 | Gunakan `http://` secara eksplisit, nonaktifkan upgrade HTTPS otomatis untuk alamat tersebut bila diperlukan |
-| Halaman lama mati | Runner GitHub Actions bersifat sementara; salin IP/URL dari run baru |
-| Password VNC ditolak | Periksa pilihan password mode; VNCAuth hanya memproses delapan byte pertama |
-| Ingin HTTPS tanpa port 6082 | Aktifkan MagicDNS dan HTTPS Certificates di pengaturan DNS Tailscale, lalu pilih `tailscale_https` pada run berikutnya |
-| HTTPS Serve timeout, runner sebelumnya langsung gagal | Workflow baru melakukan retry/probe HTTPS dan otomatis fallback ke TCP 6082. Gunakan URL **Active transport** dari Summary. Jika tetap menginginkan HTTPS, periksa persetujuan tailnet dan sertifikat Tailscale |
+Ping atau port yang merespons belum berarti login berhasil. Untuk desktop interaktif, buka aplikasi sederhana dari klien, lalu pastikan mouse dan keyboard mengubah isi sesi yang sedang Anda lihat.
 
-Untuk diagnosis koneksi noVNC lebih detail, tambahkan `&logging=debug` ke URL yang sudah berisi `#resize=scale&autoconnect=1`, lalu lihat Developer Tools di browser.
+</details>
 
-### 🛡️ Jangan tutup terminal GitHub runner
+## Verifikasi dan dokumentasi
 
-Log [run #42505446065](https://github.com/wawanwfs/RDP/actions/runs/42505446065) menunjukkan runner menerima shutdown signal **sebelum** Tailscale logout. Karena runner GitHub-hosted bersifat sementara, menutup jendela console yang menjalankan proses runner dapat menghentikan seluruh sesi.
+[![Pemeriksaan macOS](https://github.com/wawanwfs/RDP/actions/workflows/macos-workspace-checks.yml/badge.svg?branch=main)](https://github.com/wawanwfs/RDP/actions/workflows/macos-workspace-checks.yml)
 
-Workflow terbaru mencoba menyembunyikan jendela console proses **Runner.Listener** tanpa mematikan proses tersebut. Ini best effort: jika proses tidak memiliki console yang dapat diakses, langkah tersebut dilewati dengan peringatan.
+| Rujukan | Isi |
+| --- | --- |
+| [Actions dan Summary](https://github.com/wawanwfs/RDP/actions) | Status instalasi, hasil probe dari runner, dan alamat koneksi untuk setiap run |
+| [Matriks acceptance](docs/ACCEPTANCE_MATRIX.md) | Bukti uji terdahulu dan checklist untuk pengujian dari perangkat klien |
+| [Panduan Linux](linux/README.md) | Kombinasi distro/desktop, transport, opsi aplikasi, dan diagnosis XRDP |
+| [Panduan macOS](macos/README.md) dan [Controller Windows](macos/WINDOWS_CONTROL.md) | SSH, preview, diagnosis Screen Sharing, dan kriteria lulus kendali input |
+| [Workflow Multi-OS lama](.github/workflows/multi-os-remote.yml) | Workflow lama yang dapat menampilkan kredensial sementara di log atau Summary. Untuk setup baru, gunakan salah satu dari tiga workflow utama |
 
-Untuk meninggalkan desktop, gunakan **Disconnect** pada noVNC atau tutup tab browser—**jangan menutup terminal GitHub runner jika masih terlihat**. Logout dari blok `finally` pada Keep Alive sudah dihapus; logout Tailscale kini ditangani oleh step terpisah **Cleanup Tailscale Logout**. Jika GitHub menghentikan runner, koneksi tetap tidak dapat dipertahankan.
-## ⏳ Durasi, Keep Alive, dan cleanup
-
-- `duration_hours` tersedia dengan pilihan **1, 3, atau 6 jam**; penghitung sesi dimulai saat langkah **Remote READY – Keep Alive** berjalan.
-- Job GitHub Actions tetap memiliki **`timeout-minutes: 360` (maksimal 6 jam dari awal job)**. Waktu instalasi ikut dihitung, sehingga opsi 6 jam tidak menjamin enam jam penuh *setelah* proses setup.
-- Heartbeat Keep Alive tercetak setiap sekitar **60 detik**. Status `in_progress` pada tahap ini **normal**: runner sedang dipertahankan untuk remote access.
-- Sesi dapat dihentikan lebih awal dengan **Cancel workflow**. Langkah cleanup mencoba melakukan `tailscale logout`; ketika dibatalkan paksa atau timeout, cleanup bersifat *best effort*.
-- Data, aplikasi, dan proses di runner **tidak persist** setelah runner dihentikan.
-
-## 📦 Aplikasi opsional
-
-Form workflow menyediakan pilihan IDE (VS Code/Antigravity), editor video (CapCut/Shotcut), MetaTrader 4/5, AI API router (9Router/OmniRoute), coding agent (Codex CLI/Claude Code), AI agent (Hermes/OpenClaw/OpenCode), dan **ArtCraft Launcher**.
-
-**ArtCraft Launcher terbaru:** workflow tidak lagi menginstal versi lama `v0.3.2`. Saat `install_artcraft=true`, installer membaca [rilis stabil terbaru dari `storytold/craft-launcher`](https://github.com/storytold/craft-launcher/releases/latest), mencari MSI Windows x64 resmi, mengunduhnya, lalu **memverifikasi SHA-256 terhadap digest aset GitHub** sebelum memasang untuk pengguna `RDP`. Versi yang didapat dicatat pada kolom **App Status** di Actions Summary. Rilis terbaru yang tersedia saat pembaruan panduan ini adalah **v0.16.1 (8 November 2026)**; run berikutnya bisa memakai versi yang lebih baru jika sudah diterbitkan. Jika API/rilis tidak dapat diverifikasi, instalasi akan gagal daripada memakai installer yang tidak tepercaya.
-
-**Perbaikan lokasi installer v0.16+:** ArtCraft Launcher kini menggunakan `%LOCALAPPDATA%\Programs\ArtCraft\Launcher\artcraft-launcher.exe`, bukan path lama `%LOCALAPPDATA%\Programs\ArtCraft Launcher\artcraft-launcher.exe`. Workflow membaca path aktual yang dicatat MSI pada registry akun `RDP` (`HKCU\Software\Learning Machines LLC\ArtCraft Launcher`, nilai `InstallDir`), serta memeriksa kedua lokasi agar instalasi baru dan upgrade lama sama-sama dikenali. Jika instalasi masih gagal, lihat log step **Install Apps in Parallel (Skip Existing)** dan `msi.log` pada direktori diagnostik `C:\ProgramData\RDP-Setup\UserTasks\RdpSetup-ArtCraft-*`.
-
-Ketersediaan setiap aplikasi bergantung pada image Windows, installer, dan hasil langkah instalasi. Periksa tabel **App Status** pada Actions Summary; jangan menganggap semua aplikasi berhasil hanya karena workflow mencapai tahap Remote READY.
-
-## 🔒 Keamanan dan batasan
-
-- Akses remote ditujukan ke **tailnet**, bukan tautan publik.
-- Jangan membuka port RDP/VNC ke internet atau membagikan auth key/password.
-- Untuk akun remote, gunakan password kuat dan hindari mempublikasikan log yang mengandung kredensial acak.
-- noVNC dan RDP bisa menampilkan sesi Windows berbeda; tidak ada jaminan semua aplikasi memiliki UI aktif di console session.
-- Proyek ini menyediakan **lingkungan pengujian sementara**. Keberhasilan koneksi nyata tetap harus dikonfirmasi pada perangkat klien.
+Saat melaporkan masalah, sertakan **URL run, sistem operasi, mode akses, dan gejala dari perangkat klien**. Hapus password, token, dan informasi tailnet yang tidak perlu dari cuplikan log.
 
 ---
 
 <div align="center">
 
-**WFS Tech • Build. Connect. Test.**
-
-[▶ Run Windows Workspace](https://github.com/wawanwfs/RDP/actions/workflows/windows-remote-workspace-with-apps.yml) · [GitHub Actions](https://github.com/wawanwfs/RDP/actions) · [Tailscale Docs](https://tailscale.com/kb) · [noVNC Project](https://github.com/novnc/noVNC)
+**WFS Tech · Build. Connect. Test.**
 
 </div>
