@@ -4,11 +4,11 @@
 
 **Native Apple-backed macOS · Tailscale Private Network · SSH · Experimental Screen Sharing**
 
-[![macOS CI](https://img.shields.io/github/actions/workflow/status/wawanwfs/RDP/macos-workspace-checks.yml?branch=main&style=for-the-badge&logo=apple&label=macOS%20CI)](https://github.com/wawanwfs/RDP/actions/workflows/macos-workspace-checks.yml)
+[![macOS · Bukti uji](https://img.shields.io/badge/macOS-Bukti%20Uji%20Historis-5C4CD8?style=for-the-badge&logo=apple)](https://github.com/wawanwfs/RDP/actions/runs/43258055630)
 [![Platform](https://img.shields.io/badge/Platform-macOS%2015%20%2F%2026-111111?style=for-the-badge&logo=apple)](https://github.com/actions/runner-images)
 [![Private Network](https://img.shields.io/badge/Network-Tailscale%20Private-242424?style=for-the-badge)](https://tailscale.com)
 
-[**▶ Run WFS macOS Workspace**](https://github.com/wawanwfs/RDP/actions/workflows/macos-remote-workspace.yml) · [**View CI**](https://github.com/wawanwfs/RDP/actions/workflows/macos-workspace-checks.yml) · [**Root README**](../README.md)
+[**▶ Run WFS macOS Workspace**](https://github.com/wawanwfs/RDP/actions/workflows/macos-remote-workspace.yml) · [**Historical test run**](https://github.com/wawanwfs/RDP/actions/runs/43258055630) · [**Root README**](../README.md)
 
 </div>
 
@@ -16,7 +16,7 @@
 
 ## 1. What this provides
 
-WFS Remote Workspaces mempunyai **tiga** workflow utama: [Windows RDP](../.github/workflows/windows-remote-workspace-with-apps.yml), [Linux XRDP](../.github/workflows/linux-remote-workspace.yml), dan [macOS native](../.github/workflows/macos-remote-workspace.yml). macOS menggunakan **runner macOS asli dari GitHub** yang di-host di infrastruktur perangkat Apple, **bukan** Docker/Linux yang menyamar sebagai macOS, bukan QEMU, dan bukan instalasi Hackintosh.
+WFS Remote Workspaces mempunyai **tiga** workflow utama: [Windows RDP](../.github/workflows/windows-remote-workspace.yml), [Linux XRDP](../.github/workflows/linux-remote-workspace.yml), dan [macOS native](../.github/workflows/macos-remote-workspace.yml). macOS menggunakan **runner macOS asli dari GitHub** yang di-host di infrastruktur perangkat Apple, **bukan** Docker/Linux yang menyamar sebagai macOS, bukan QEMU, dan bukan instalasi Hackintosh.
 
 | Capability | Supported / limitation |
 |:--|:--|
@@ -301,7 +301,7 @@ This approach follows from the user's observations: `screencapture` under `wfsre
 
 [WFS Windows Apple VNC Controller](WINDOWS_CONTROL.md) is now available as a separate Windows GUI. It combines the real PNG screenshot at Tailscale port 6081 with Apple's RFB authentication on port 5900. Unlike a generic VNC viewer, its **optional** Apple-specific protocol client requests `SetMode(control)`. The application maps a user-click on the screenshot to one VNC pointer event and can send a user-selected key. It **does not bypass** macOS TCC, Aqua login, or Remote Management restrictions.
 
-**This is an input candidate, not a verified fix yet.** Prove it by clicking an innocuous Finder icon and manually refreshing the screenshot after the 60-second cooldown. If Finder visibly responds, mouse control is accepted on the hosted Mac. If not, keep SSH as your reliable control path and inspect the macOS authorization/session status. The third-party Apple VNC dependency is explicitly opt-in and pinned to a reviewed upstream commit; see [installation and security details](WINDOWS_CONTROL.md).
+**This is an input candidate, not a verified fix yet.** Use **Capture Apple VNC** to check the framebuffer of the same session that carries input. If it displays Finder, click a harmless item and verify a visible change in that session. The 60-second cache applies to **Capture one frame**, which is the separate read-only preview. If not, keep SSH as your reliable control path and inspect the macOS authorization/session status. The third-party Apple VNC dependency is explicitly opt-in and pinned to a reviewed upstream commit; see [installation and security details](WINDOWS_CONTROL.md).
 
 ## 8. Troubleshooting and acceptance gates
 
@@ -321,10 +321,10 @@ This approach follows from the user's observations: `screencapture` under `wfsre
 
 ## 9. Verification and changes
 
-The [macOS verification workflow](https://github.com/wawanwfs/RDP/actions/workflows/macos-workspace-checks.yml) runs Bash/YAML checks on Linux and a **read-only Apple-hosted macOS 15 capability audit**. The audit records real OS/CPU, console user, WindowServer processes and whether screen capture is available. It does not modify TCC/Privacy, enable a public tunnel, or pretend that Screen Sharing was authenticated externally.
+The [historical macOS verification run](https://github.com/wawanwfs/RDP/actions/runs/43258055630) checked workflow and shell scripts, authenticated to localhost SSH on Apple Silicon and Intel, and tested the screenshot preview. This is evidence for that run, not a live CI status for `main`. It does not verify that a remote user can authenticate to Screen Sharing or control the desktop.
 
 For a reliable always-on, fully interactive macOS workstation, use an Apple Mac (local or cloud-hosted) with GUI sharing enabled through authorized Settings/MDM and a persistent network identity. The disposable Actions runner is primarily for temporary builds, CLI tasks, and GUI experiments.
 
 ---
 
-[⬅ Main README](../README.md) · [Windows workspace](../.github/workflows/windows-remote-workspace-with-apps.yml) · [Linux workspace](../.github/workflows/linux-remote-workspace.yml) · [GitHub macOS runner documentation](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)
+[⬅ Main README](../README.md) · [Windows workspace](../.github/workflows/windows-remote-workspace.yml) · [Linux workspace](../.github/workflows/linux-remote-workspace.yml) · [GitHub macOS runner documentation](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)

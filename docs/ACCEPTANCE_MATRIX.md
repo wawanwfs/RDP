@@ -6,7 +6,7 @@
 
 | System | Run workflow | Default | Remote |
 |:--|:--|:--|:--|
-| Windows | [Windows Remote Workspace](../.github/workflows/windows-remote-workspace-with-apps.yml) | `windows-2025` | Native `rdp`, user `RDP` |
+| Windows | [Windows Remote Workspace](../.github/workflows/windows-remote-workspace.yml) | `windows-2025` | Native `rdp`, user `RDP` |
 | Linux | [Linux Remote Workspace](../.github/workflows/linux-remote-workspace.yml) | `ubuntu` + `kde` | Native `xrdp`, user `RDP` |
 | macOS | [macOS Remote Workspace](../.github/workflows/macos-remote-workspace.yml) | `macos-15` Apple Silicon | Tailscale SSH `:2222`, Apple VNC `:5900` experimental, user `wfsremote` (verify Summary) |
 
@@ -18,13 +18,13 @@ All three use Tailscale (private tailnet only), `rdp-runner` as default hostname
 |:--|:--|:--|:--|
 | Windows MT4 (Exness) | [native Windows install acceptance](https://github.com/wawanwfs/RDP/actions/runs/42924327969) | Official Exness download signed, `MetaTrader 4 EXNESS\terminal.exe` found, hashed | RDP user login, broker login, charts, EA |
 | Windows MT5 | [same native Windows run](https://github.com/wawanwfs/RDP/actions/runs/42924327969) | Official MetaQuotes download signed, `MetaTrader 5\terminal64.exe` found, hashed | RDP user login, broker login, charts, EA |
-| Windows scripted fallback | [Windows acceptance workflow](../.github/workflows/windows-workspace-checks.yml) | Installer staging and Public Desktop shortcut paths are checked when silent installation fails | A user clicked the installer or accepted the license |
+| Windows scripted fallback | [Windows installer implementation](../windows/Install-MetaTrader.ps1) | The installer can stage a recovery installer and a Public Desktop shortcut when unattended setup fails | A user clicked the installer or accepted the license |
 | Linux MT5 Wine | [Linux binary acceptance](https://github.com/wawanwfs/RDP/actions/runs/42844537445) | Wine installed, terminal64.exe and launcher created from MetaQuotes installer | GUI may fail with false debugger dialog on current MT5 builds. Separate X11 smoke test available |
 | Linux MT4 Wine | [Linux fallback acceptance](https://github.com/wawanwfs/RDP/actions/runs/42925180890) | Exact state `PENDING_INTERACTIVE`, original setup and desktop shortcut were checked after headless timeout | Does **not** prove MT4 terminal is installed |
 | Linux KDE XRDP | [Linux runtime acceptance](https://github.com/wawanwfs/RDP/actions/runs/42925180890) | FreeRDP GUI login starts KDE Plasma/X11 instead of silently falling back to Xfce | External client connection remains unverified |
-| Linux KDE/Xfce / Tailscale | [Linux CI](../.github/workflows/linux-workspace-checks.yml) | Test-only native GUI session, HTTPS authentication, Tailscale port forwarding, SSH-free RDP handshake | Successful connection from a separate user's device |
+| Linux KDE/Xfce / Tailscale | [Historical Linux run](https://github.com/wawanwfs/RDP/actions/runs/42925180890) | Test-only native GUI session, HTTPS authentication, Tailscale port forwarding, SSH-free RDP handshake | Successful connection from a separate user's device |
 
-**Linux CI (latest completed integration: 8/8 jobs passed):** [run 42925180890](https://github.com/wawanwfs/RDP/actions/runs/42925180890). Windows native MT4/MT5 tests also passed [run 42924327969](https://github.com/wawanwfs/RDP/actions/runs/42924327969). Both results are installer/runtime evidence, not broker acceptance.
+**Historical Linux integration (8/8 jobs passed):** [run 42925180890](https://github.com/wawanwfs/RDP/actions/runs/42925180890). Windows native MT4/MT5 tests also passed [run 42924327969](https://github.com/wawanwfs/RDP/actions/runs/42924327969). Both results are installer/runtime evidence, not broker acceptance.
 
 **Linux MT4 status:** the installer offers a **`PENDING_INTERACTIVE`** fallback with a visible `Install MetaTrader 4 (WFS)` desktop icon if Wine's unattended Exness setup does not produce the correct executable. This is **not** equivalent to `INSTALLED`. The isolated GUI installer should be completed only inside the authorized user's remote desktop. A pending result must never be marketed as unattended success.
 
@@ -37,10 +37,10 @@ All three use Tailscale (private tailnet only), `rdp-runner` as default hostname
 | Acceptance level | Test & evidence | What counts as pass |
 |:--|:--|:--|
 | Native macOS runner | [macOS CI run](https://github.com/wawanwfs/RDP/actions/runs/42964659962) | Real macOS 15.8.2 ARM64, user `runner`, WindowServer present, sudo/ARD utility and screenshot capability observed |
-| Workflow safety | [macOS native CI](../.github/workflows/macos-workspace-checks.yml) | YAML/Bash parse and security controls; no TCC/SIP manipulation or publicly bound SSH |
+| Workflow safety | [Historical macOS run](https://github.com/wawanwfs/RDP/actions/runs/43258055630) | YAML/Bash parse and security controls; no TCC/SIP manipulation or publicly bound SSH |
 | Tailnet SSH listener | Must be checked after [macOS workflow run](../.github/workflows/macos-remote-workspace.yml) | `ListenAddress` private 100.x.x.x, TCP :2222 responds, restricted user |
 | Local SSH authentication | [macOS ARM64+Intel CI](https://github.com/wawanwfs/RDP/actions/runs/42965871428) | Dedicated user `wfsremote` created, macOS Directory Services password verified, real OpenSSH login accepted via loopback on both CPU architectures |
-| External SSH authentication | Client-side acceptance **not yet performed** | Authorized Windows device on Tailscale logs in to 100.x.x.x:2222 as `wfsremote` |
+| External SSH authentication | Not covered by the linked CI run | Authorized Windows device on Tailscale logs in to 100.x.x.x:2222 as `wfsremote` |
 | Screen Sharing listener | Best-effort GitHub-hosted macOS | TCP :5900 may open and reply with an RFB banner; `RFB_READY_GUI_CONTROL_UNVERIFIED` is **not** acceptance |
 | Actual GUI control | Client-side acceptance **not yet performed** | VNC viewer reaches Finder, mouse/keyboard works, no black screen and no view-only restriction |
 | Hackintosh | Not provided | No unsupported x86 PC macOS installation or non-Apple VM |
@@ -49,7 +49,7 @@ All three use Tailscale (private tailnet only), `rdp-runner` as default hostname
 
 ## 3. Windows acceptance checklist
 
-- [ ] Start a new [Windows workflow run](https://github.com/wawanwfs/RDP/actions/workflows/windows-remote-workspace-with-apps.yml), `remote_access=rdp`, `metatrader_choice=both`,  `windows_version=windows-2025`.
+- [ ] Start a new [Windows workflow run](https://github.com/wawanwfs/RDP/actions/workflows/windows-remote-workspace.yml), `remote_access=rdp`, `metatrader_choice=both`,  `windows_version=windows-2025`.
 - [ ] Confirm setup completes. Record real Actions Summary IP, hostname, and app status; do not share any secret.
 - [ ] Connect your Windows PC to the same Tailscale tailnet. Run `mstsc`, use run's `100.x.x.x:3389`, username `RDP` and your `RDP_PASSWORD` secret.
 - [ ] Verify desktop is not black and both MT4 and MT5 shortcuts appear only when appropriate.
@@ -95,4 +95,4 @@ Test-NetConnection 100.x.x.x -Port 6082
 
 ---
 
-[Root README](../README.md) · [Linux guide](../linux/README.md) · [macOS guide](../macos/README.md) · [Windows CI](../.github/workflows/windows-workspace-checks.yml) · [Linux CI](../.github/workflows/linux-workspace-checks.yml)
+[Root README](../README.md) · [Linux guide](../linux/README.md) · [macOS guide](../macos/README.md) · [Historical Windows tests](https://github.com/wawanwfs/RDP/actions/runs/42924327969) · [Historical Linux tests](https://github.com/wawanwfs/RDP/actions/runs/42925180890)

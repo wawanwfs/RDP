@@ -6,11 +6,11 @@
 
 **Workspace Linux sementara di GitHub Actions: pilihan aplikasi setara menu Windows, koneksi privat Tailscale, dan konfigurasi akun/password yang sama.**
 
-[![Linux CI](https://img.shields.io/github/actions/workflow/status/wawanwfs/RDP/linux-workspace-checks.yml?branch=main&style=for-the-badge&logo=githubactions&label=Linux%20Tests)](https://github.com/wawanwfs/RDP/actions/workflows/linux-workspace-checks.yml)
+[![Linux · Bukti uji](https://img.shields.io/badge/Linux-Bukti%20Uji%20Historis-147D64?style=for-the-badge&logo=linux)](https://github.com/wawanwfs/RDP/actions/runs/42925180890)
 [![Tailscale](https://img.shields.io/badge/Tailscale-Private%20Only-242424?style=for-the-badge)](https://tailscale.com/)
 [![Linux](https://img.shields.io/badge/Desktop-21%20Native%20Options-168566?style=for-the-badge&logo=linux)](https://docs.linuxserver.io/images/docker-webtop/)
 
-[**▶ Jalankan Linux Workspace**](https://github.com/wawanwfs/RDP/actions/workflows/linux-remote-workspace.yml) · [**▶ Windows Workspace**](https://github.com/wawanwfs/RDP/actions/workflows/windows-remote-workspace-with-apps.yml) · [README Root](../README.md)
+[**▶ Jalankan Linux Workspace**](https://github.com/wawanwfs/RDP/actions/workflows/linux-remote-workspace.yml) · [**▶ Windows Workspace**](https://github.com/wawanwfs/RDP/actions/workflows/windows-remote-workspace.yml) · [README Root](../README.md)
 
 </div>
 
@@ -253,6 +253,6 @@ Jika RDP error, periksa langkah **Start native Linux xrdp server** dan **Publish
 
 **WFS Tech • Windows & Linux Remote Workspace**
 
-[**▶ Linux Actions**](https://github.com/wawanwfs/RDP/actions/workflows/linux-remote-workspace.yml) · [**▶ Windows Actions**](https://github.com/wawanwfs/RDP/actions/workflows/windows-remote-workspace-with-apps.yml) · [Root README](../README.md)
+[**▶ Linux Actions**](https://github.com/wawanwfs/RDP/actions/workflows/linux-remote-workspace.yml) · [**▶ Windows Actions**](https://github.com/wawanwfs/RDP/actions/workflows/windows-remote-workspace.yml) · [Root README](../README.md)
 
 </div>
