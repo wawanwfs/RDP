@@ -1,0 +1,30 @@
+name: Windows installer regression
+
+on:
+  push:
+    branches: [main, fix/windows-optional-installer-timeout]
+    paths:
+      - '.github/workflows/windows-remote-workspace.yml'
+      - '.github/workflows/windows-installer-checks.yml'
+      - 'windows/Workspace-InstallStatus.ps1'
+      - 'windows/Test-Workspace-InstallStatus.ps1'
+  pull_request:
+    paths:
+      - '.github/workflows/windows-remote-workspace.yml'
+      - '.github/workflows/windows-installer-checks.yml'
+      - 'windows/Workspace-InstallStatus.ps1'
+      - 'windows/Test-Workspace-InstallStatus.ps1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  installer-regression:
+    runs-on: windows-2025
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test timeout, installer isolation, Summary, and workflow scripts
+        shell: pwsh
+        run: ./windows/Test-Workspace-InstallStatus.ps1
