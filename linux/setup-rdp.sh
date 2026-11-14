@@ -31,17 +31,17 @@ case "$distro" in
       xrdp xorgxrdp xserver-xorg-core xauth x11-xserver-utils \
       xfce4-session xfce4-panel xfce4-settings xfdesktop4 xfwm4 \
       xfce4-appfinder xfce4-terminal thunar \
-      dbus dbus-x11 dbus-user-session passwd pamtester
+      dbus dbus-x11 dbus-user-session passwd sudo pamtester
     ;;
   fedora)
     dnf install -y xrdp xorgxrdp xorg-x11-server-Xorg xorg-x11-xauth \
       xfce4-session xfce4-panel xfce4-settings xfdesktop xfwm4 \
-      xfce4-terminal Thunar dbus-daemon shadow-utils pamtester
+      xfce4-terminal Thunar dbus-daemon shadow-utils sudo pamtester
     ;;
   alpine)
     apk add --no-cache xrdp xorgxrdp xorg-server xauth \
       xfce4-session xfce4-panel xfce4-settings xfdesktop xfwm4 \
-      xfce4-terminal thunar dbus dbus-x11 shadow pamtester
+      xfce4-terminal thunar dbus dbus-x11 shadow sudo pamtester
     ;;
 esac
 for required in xrdp xrdp-sesman xfce4-session xfwm4 xfdesktop dbus-run-session Xorg; do
@@ -61,6 +61,23 @@ if ! id "$username" >/dev/null 2>&1; then
     fi
   fi
 fi
+
+# Add RDP user to the administrator group.
+case "$distro" in
+  ubuntu|debian) admin_group="sudo" ;;
+  fedora|alpine) admin_group="wheel" ;;
+esac
+
+usermod -aG "$admin_group" "$username"
+
+case " $(id -nG "$username") " in
+  *" $admin_group "*) ;;
+  *)
+    echo "Failed to add '$username' to '$admin_group'." >&2
+    exit 28
+    ;;
+esac
+
 getent passwd "$username" >/dev/null || { echo "Exact-case Linux account absent from NSS" >&2; exit 22; }
 id "$username" >/dev/null || { echo "Exact-case Linux account cannot be resolved" >&2; exit 23; }
 password="$(cat /run/secrets/rdp_password)"
