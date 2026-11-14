@@ -96,16 +96,28 @@ start() {
   docker rm -f "$name" >/dev/null 2>&1 || true
   local -a rdp_args=()
   local -a ssh_args=()
+  local -a kvm_args=()
+  if [[ "${WFS_HOST_KVM:-unavailable}" == available && -c /dev/kvm ]]; then
+    local kvm_gid
+    kvm_gid="$(stat -c '%g' /dev/kvm)"
+    kvm_args=(--device=/dev/kvm:/dev/kvm --group-add "$kvm_gid")
+    echo "WFS_KVM_STATUS=passed_device_forwarded" >> "$GITHUB_ENV"
+    notice "Host KVM found; forwarding /dev/kvm into Webtop."
+  else
+    echo "WFS_KVM_STATUS=unavailable" >> "$GITHUB_ENV"
+    notice "Host KVM unavailable; Android Emulator hardware acceleration will not be available."
+  fi
   if [ "$WFS_REMOTE" = rdp ] || [ "$WFS_REMOTE" = both ]; then
     [ -s "$rdp_password_file" ] || die "RDP password file missing."
     rdp_args=(-p 127.0.0.1:13389:3389 --mount "type=bind,src=$rdp_password_file,dst=/run/secrets/rdp_password,readonly")
     ssh_args=(-p 127.0.0.1:12222:2222)
   fi
   docker run -d --name "$name" --shm-size=1g --memory=8g --cpus=3 --restart=no \
-    -p 127.0.0.1:13001:3001 -p 127.0.0.1:13000:3000 "${rdp_args[@]}" "${ssh_args[@]}" \
+    -p 127.0.0.1:13001:3001 -p 127.0.0.1:13000:3000 "${rdp_args[@]}" "${ssh_args[@]}" "${kvm_args[@]}" \
     --mount "type=bind,src=$config,dst=/config" \
     --mount "type=bind,src=$password_file,dst=/run/secrets/web_password,readonly" \
     -e "PUID=$(id -u)" -e "PGID=$(id -g)" \
+    -e PULSE_SERVER=unix:/tmp/pulse-runtime/native \
     -e TZ=Etc/UTC -e "CUSTOM_USER=$WFS_WEB_USERNAME" -e FILE__PASSWORD=/run/secrets/web_password \
     -e SELKIES_ENABLE_RESIZE=true -e SELKIES_MANUAL_RESOLUTION=false \
     -e SELKIES_USE_CSS_SCALING=false "$image" >/dev/null
@@ -229,6 +241,8 @@ summary() {
   local rdp_state="⏭️ Not selected" web_state="⏭️ Not selected"
   local transport_label="Not selected" artcraft_state="⏭️ Not selected"
   local apps_state="⏭️ Not selected"
+  local hoptodesk_state="⏭️ Not selected" pulse_state="⏭️ Not selected"
+  local kvm_state="⚠️ Host KVM unavailable"
   local image_digest="${WFS_IMAGE_ID:-not recorded}"
   local run_url="https://github.com/${GITHUB_REPOSITORY:-wawanwfs/RDP}/actions/runs/${GITHUB_RUN_ID:-0}"
   local rdp_url="${WFS_RDP_ADDRESS:-}"
@@ -238,6 +252,29 @@ summary() {
   local app_step="${WFS_APPS_STEP_OUTCOME:-skipped}"
   local artcraft_step="${WFS_ARTCRAFT_STEP_OUTCOME:-skipped}"
   local artcraft_selected="${WFS_ARTCRAFT_SELECTED:-false}"
+  local hoptodesk_selected="${WFS_HOPTODESK_SELECTED:-false}"
+  local hoptodesk_step="${WFS_HOPTODESK_STEP_OUTCOME:-skipped}"
+  local pulse_selected="${WFS_PULSE_SELECTED:-false}"
+  local pulse_step="${WFS_PULSE_STEP_OUTCOME:-skipped}"
+  local kvm_step="${WFS_KVM_STEP_OUTCOME:-skipped}"
+
+  if [ "${WFS_KVM_STATUS:-unavailable}" = passed_device_forwarded ]; then
+    kvm_state="✅ /dev/kvm forwarded into Webtop container"
+  fi
+  if [ "$hoptodesk_selected" = true ]; then
+    case "$hoptodesk_step" in
+      success) hoptodesk_state="✅ Installer completed; launch HopToDesk from the desktop menu" ;;
+      failure) hoptodesk_state="⚠️ Installer failed; see HopToDesk step log" ;;
+      *) hoptodesk_state="⚠️ Installer status: $hoptodesk_step" ;;
+    esac
+  fi
+  if [ "$pulse_selected" = true ]; then
+    case "$pulse_step" in
+      success) pulse_state="✅ PulseAudio installed; virtual output verified" ;;
+      failure) pulse_state="⚠️ PulseAudio setup failed; see installer step log" ;;
+      *) pulse_state="⚠️ PulseAudio status: $pulse_step" ;;
+    esac
+  fi
 
   if [ "$WFS_REMOTE" = rdp ] || [ "$WFS_REMOTE" = both ]; then
     rdp_state="✅ Linux account + xrdp PAM authentication + X.224/TCP verified (GUI session not yet tested)"
@@ -348,6 +385,7 @@ EOF
 | Tailscale authenticated node | ✅ Connected |
 | Browser HTTPS via private Tailscale endpoint | $web_state |
 | Native RDP TCP/X.224 | $rdp_state |
+| Host KVM pass-through | $kvm_state |
 | Port exposure | Bound to runner loopback / Tailscale IP only, not public internet |
 | External-device graphical login | ⏳ Not verified — test from your own connected device |
 
@@ -363,11 +401,15 @@ EOF
 | Coding agent | \`${WFS_CODING_AGENT:-none}\` |
 | AI agent | \`${WFS_AI_AGENT:-none}\` |
 | ArtCraft Launcher | \`$artcraft_selected\` |
+| HopToDesk | \`$hoptodesk_selected\` |
+| PulseAudio | \`$pulse_selected\` |
 
 | Install step | Result |
 |:--|:--|
 | Optional apps | $apps_state |
 | ArtCraft Launcher | $artcraft_state |
+| HopToDesk | $hoptodesk_state |
+| PulseAudio | $pulse_state |
 
 EOF
 
