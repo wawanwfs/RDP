@@ -31,17 +31,17 @@ case "$distro" in
       xrdp xorgxrdp xserver-xorg-core xauth x11-xserver-utils \
       xfce4-session xfce4-panel xfce4-settings xfdesktop4 xfwm4 \
       xfce4-appfinder xfce4-terminal thunar \
-      dbus dbus-x11 dbus-user-session passwd sudo pamtester
+      dbus dbus-x11 dbus-user-session passwd sudo pamtester openssh-server
     ;;
   fedora)
     dnf install -y xrdp xorgxrdp xorg-x11-server-Xorg xorg-x11-xauth \
       xfce4-session xfce4-panel xfce4-settings xfdesktop xfwm4 \
-      xfce4-terminal Thunar dbus-daemon shadow-utils sudo pamtester
+      xfce4-terminal Thunar dbus-daemon shadow-utils sudo pamtester openssh-server
     ;;
   alpine)
     apk add --no-cache xrdp xorgxrdp xorg-server xauth \
       xfce4-session xfce4-panel xfce4-settings xfdesktop xfwm4 \
-      xfce4-terminal thunar dbus dbus-x11 shadow sudo pamtester
+      xfce4-terminal thunar dbus dbus-x11 shadow sudo pamtester openssh-server
     ;;
 esac
 for required in xrdp xrdp-sesman xfce4-session xfwm4 xfdesktop dbus-run-session Xorg; do
@@ -137,6 +137,16 @@ test -x /usr/local/bin/wfs-xrdp-xfce-session
 echo "[WFS Linux xrdp] PASS: exact Unix account '$username', PAM, xfwm4, xfdesktop, DBus, Xorg and explicit Xfce entry point."
 xrdp-sesman
 xrdp
+
+# Start SSH server inside the Webtop container.
+command -v sshd >/dev/null 2>&1 || {
+  echo "OpenSSH server binary not found." >&2
+  exit 29
+}
+mkdir -p /run/sshd
+ssh-keygen -A
+sshd -p 2222
+
 IN_CONTAINER
 info "Checking xrdp protocol (TCP/X.224) on localhost 13389."
 python3 - <<'PY'
