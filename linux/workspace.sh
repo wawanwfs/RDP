@@ -95,12 +95,14 @@ start() {
   [ "$pulled" = yes ] || die "Cannot pull $image after four attempts (check registry rate limits)."
   docker rm -f "$name" >/dev/null 2>&1 || true
   local -a rdp_args=()
+  local -a ssh_args=()
   if [ "$WFS_REMOTE" = rdp ] || [ "$WFS_REMOTE" = both ]; then
     [ -s "$rdp_password_file" ] || die "RDP password file missing."
     rdp_args=(-p 127.0.0.1:13389:3389 --mount "type=bind,src=$rdp_password_file,dst=/run/secrets/rdp_password,readonly")
+    ssh_args=(-p 127.0.0.1:12222:2222)
   fi
   docker run -d --name "$name" --shm-size=1g --memory=8g --cpus=3 --restart=no \
-    -p 127.0.0.1:13001:3001 -p 127.0.0.1:13000:3000 "${rdp_args[@]}" \
+    -p 127.0.0.1:13001:3001 -p 127.0.0.1:13000:3000 "${rdp_args[@]}" "${ssh_args[@]}" \
     --mount "type=bind,src=$config,dst=/config" \
     --mount "type=bind,src=$password_file,dst=/run/secrets/web_password,readonly" \
     -e "PUID=$(id -u)" -e "PGID=$(id -g)" \
@@ -207,6 +209,7 @@ publish() {
   if [ "$WFS_REMOTE" = rdp ] || [ "$WFS_REMOTE" = both ]; then
     [ "${WFS_RDP_READY:-0}" = 1 ] || die "Native xrdp was not verified."
     start_tailnet_forwarder "$ip" 3389 13389
+    start_tailnet_forwarder "$ip" 2222 12222
     rdp_address="$ip:3389"
   fi
 
