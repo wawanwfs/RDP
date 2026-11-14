@@ -139,13 +139,13 @@ xrdp-sesman
 xrdp
 
 # Start SSH server inside the Webtop container.
-command -v sshd >/dev/null 2>&1 || {
-  echo "OpenSSH server binary not found." >&2
+test -x /usr/sbin/sshd || {
+  echo "OpenSSH server binary not found at /usr/sbin/sshd." >&2
   exit 29
 }
 mkdir -p /run/sshd
 ssh-keygen -A
-sshd -p 2222
+/usr/sbin/sshd -p 2222
 
 IN_CONTAINER
 info "Checking xrdp protocol (TCP/X.224) on localhost 13389."
