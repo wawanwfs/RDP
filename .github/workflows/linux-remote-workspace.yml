@@ -169,6 +169,16 @@ on:
         required: true
         type: boolean
         default: false
+      install_hoptodesk:
+        description: "Install HopToDesk remote desktop client"
+        required: true
+        type: boolean
+        default: true
+      enable_pulseaudio:
+        description: "Install and start PulseAudio virtual output in the Linux container"
+        required: true
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -210,9 +220,35 @@ jobs:
           WFS_VNC_PASSWORD: ${{ secrets.VNC_PASSWORD }}
         run: bash linux/workspace.sh prepare
 
+      - name: "🧪 Detect host KVM for Android Emulator"
+        id: kvm
+        run: |
+          if [[ -c /dev/kvm ]]; then
+            echo "WFS_HOST_KVM=available" >> "$GITHUB_ENV"
+            echo "::notice title=KVM available::Runner exposes /dev/kvm."
+            stat -c 'KVM device: %n | owner=%U | group=%G | mode=%a' /dev/kvm
+          else
+            echo "WFS_HOST_KVM=unavailable" >> "$GITHUB_ENV"
+            echo "::warning title=KVM unavailable::Runner does not expose /dev/kvm; hardware acceleration cannot be enabled."
+          fi
+
       - name: "🐧 Start selected Linux distro + responsive desktop"
         timeout-minutes: 15
         run: bash linux/workspace.sh start
+
+      - name: "🔊 Install and start PulseAudio virtual output"
+        id: pulseaudio
+        if: inputs.enable_pulseaudio
+        timeout-minutes: 8
+        continue-on-error: true
+        run: bash linux/install-pulseaudio.sh
+
+      - name: "🖥️ Install official HopToDesk remote desktop client"
+        id: hoptodesk
+        if: inputs.install_hoptodesk
+        timeout-minutes: 8
+        continue-on-error: true
+        run: bash linux/install-hoptodesk.sh
 
       - name: "🖥️ Start native Linux xrdp server for RDP / both"
         if: inputs.remote_access == 'rdp' || inputs.remote_access == 'both'
@@ -253,6 +289,11 @@ jobs:
           WFS_APPS_STEP_OUTCOME: ${{ steps.apps.outcome }}
           WFS_ARTCRAFT_STEP_OUTCOME: ${{ steps.artcraft.outcome }}
           WFS_ARTCRAFT_SELECTED: ${{ inputs.install_artcraft }}
+          WFS_HOPTODESK_STEP_OUTCOME: ${{ steps.hoptodesk.outcome }}
+          WFS_HOPTODESK_SELECTED: ${{ inputs.install_hoptodesk }}
+          WFS_PULSE_STEP_OUTCOME: ${{ steps.pulseaudio.outcome }}
+          WFS_PULSE_SELECTED: ${{ inputs.enable_pulseaudio }}
+          WFS_KVM_STEP_OUTCOME: ${{ steps.kvm.outcome }}
         run: bash linux/workspace.sh summary
 
       - name: "🟢 Remote READY — Keep Alive for RDP and web"
